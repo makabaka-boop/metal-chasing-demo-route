@@ -3,7 +3,9 @@ import type { PracticeRecord, ReviewResult } from '../types';
 import {
   REVIEW_RESULT_LABELS,
   REVIEW_RESULT_COLORS,
-  STABILITY_THRESHOLD
+  STABILITY_THRESHOLD,
+  EXHIBIT_RISK_LEVEL_LABELS,
+  EXHIBIT_RISK_SOURCE_LABELS
 } from '../types';
 import { formatDuration } from '../utils/router';
 
@@ -43,6 +45,21 @@ export class ReviewModal {
     const records = store.getRecords(this.cardId);
     const stats = store.getCardReviewStats(this.cardId);
     const today = new Date().toISOString().slice(0, 10);
+    // 与卡片列表、路线视图读取同一份快照；保存 failed/partial 记录后此处即时反映沉淀结果
+    const risk = store.getExhibitRiskSnapshots(this.cardId).find((s) => !s.resolved);
+
+    const riskSection = risk
+      ? `<div class="review-risk-summary risk-${risk.riskLevel}">
+          <div class="review-risk-head">
+            <span class="risk-badge risk-${risk.riskLevel}">🛡 ${EXHIBIT_RISK_LEVEL_LABELS[risk.riskLevel]}</span>
+            <span class="review-risk-source">来源：${EXHIBIT_RISK_SOURCE_LABELS[risk.source]} · ${risk.snapshotDate}</span>
+          </div>
+          <ul class="review-risk-reasons">
+            ${risk.riskReasons.map((r) => `<li>${r}</li>`).join('')}
+          </ul>
+          <div class="review-risk-action">👉 ${risk.recommendedAction}</div>
+        </div>`
+      : `<div class="review-risk-summary risk-none">✅ 当前无未解决的展品风险</div>`;
 
     this.el.innerHTML = `
       <div class="modal-header">
@@ -69,6 +86,7 @@ export class ReviewModal {
           </div>
         </div>
         ${stats.lastPracticeDate ? `<div class="review-last-date">最近试作：${stats.lastPracticeDate}</div>` : ''}
+        ${riskSection}
 
         <div class="review-form-section">
           <h3 class="review-section-title">➕ 记录本次试作</h3>

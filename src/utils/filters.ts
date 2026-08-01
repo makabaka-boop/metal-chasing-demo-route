@@ -1,5 +1,6 @@
 import type { Card, FilterCriteria, CardReviewStats } from '../types';
 import { store } from '../store';
+import { filterExhibitRiskSnapshots } from './exhibitRisk';
 
 export function filterCards(
   cards: Card[],
@@ -10,9 +11,22 @@ export function filterCards(
     statsMap.set(card.id, store.getCardReviewStats(card.id));
   }
 
+  // 复用同一份展品风险快照；filterExhibitRiskSnapshots 保证 critical 不被筛选隐藏
+  let riskAllowedCardIds: Set<string> | null = null;
+  if (criteria.riskLevels && criteria.riskLevels.length > 0) {
+    riskAllowedCardIds = new Set(
+      filterExhibitRiskSnapshots(store.getExhibitRiskSnapshots(), criteria.riskLevels)
+        .filter((s) => !s.resolved)
+        .map((s) => s.cardId)
+    );
+  }
+
   let result = cards.filter((card) => {
     const stats = statsMap.get(card.id)!;
 
+    if (riskAllowedCardIds && !riskAllowedCardIds.has(card.id)) {
+      return false;
+    }
     if (criteria.metalSpec && criteria.metalSpec !== card.metalSpec) {
       return false;
     }

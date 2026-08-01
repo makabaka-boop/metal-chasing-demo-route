@@ -33,4 +33,8 @@
   --warning: #F39C12;
   --error: #E74C3C;
   --success: #27AE60;
+  --risk-low: #27AE60;
+  --risk-medium: #F39C12;
+  --risk-high: #E67E22;
+  --risk-critical: #E74C3C;
 }

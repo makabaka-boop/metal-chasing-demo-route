@@ -1,6 +1,6 @@
 import { store } from '../store';
-import type { FilterCriteria, CardStatus } from '../types';
-import { STATUS_LABELS, METAL_SPECS, DIFFICULTY_LABELS } from '../types';
+import type { FilterCriteria, CardStatus, ExhibitRiskLevel } from '../types';
+import { STATUS_LABELS, METAL_SPECS, DIFFICULTY_LABELS, EXHIBIT_RISK_LEVEL_LABELS } from '../types';
 import { collectOwners, collectMetalSpecs } from '../utils/filters';
 
 export class Toolbar {
@@ -124,6 +124,18 @@ export class Toolbar {
             <option value="" ${sel(c.status, '')}>全部</option>
             ${(Object.keys(STATUS_LABELS) as CardStatus[])
               .map((s) => `<option value="${s}" ${sel(c.status, s)}>${STATUS_LABELS[s]}</option>`)
+              .join('')}
+          </select>
+        </div>
+        <div class="filter-group" title="critical 严重风险始终展示，不会被筛选隐藏">
+          <label>风险等级</label>
+          <select class="filter-select" data-filter="riskLevel">
+            <option value="" ${!c.riskLevels || c.riskLevels.length === 0 ? 'selected' : ''}>全部</option>
+            ${(['critical', 'high', 'medium', 'low'] as ExhibitRiskLevel[])
+              .map(
+                (l) =>
+                  `<option value="${l}" ${sel(c.riskLevels?.[0], l)}>${EXHIBIT_RISK_LEVEL_LABELS[l]}</option>`
+              )
               .join('')}
           </select>
         </div>
@@ -256,6 +268,8 @@ export class Toolbar {
     const difficultyRaw = get<HTMLSelectElement>('difficulty')?.value;
     const difficulty = difficultyRaw ? Number(difficultyRaw) : undefined;
     const status = (get<HTMLSelectElement>('status')?.value as CardStatus) || undefined;
+    const riskLevelRaw = get<HTMLSelectElement>('riskLevel')?.value as ExhibitRiskLevel | '';
+    const riskLevels = riskLevelRaw ? [riskLevelRaw] : undefined;
     const owner = get<HTMLSelectElement>('owner')?.value || undefined;
     const minDurationRaw = get<HTMLInputElement>('minDuration')?.value;
     const minDuration = minDurationRaw ? Number(minDurationRaw) : undefined;
@@ -277,6 +291,7 @@ export class Toolbar {
       metalSpec,
       difficulty,
       status,
+      riskLevels,
       owner,
       minDuration,
       maxDuration,

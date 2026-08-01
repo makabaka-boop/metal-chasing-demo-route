@@ -1,8 +1,19 @@
-import type { Card, PracticeRecord, DailyPlan } from '../types';
+import type {
+  Card,
+  PracticeRecord,
+  DailyPlan,
+  ExhibitRiskSnapshot,
+  ExhibitRiskLevel,
+  ExhibitRiskSource
+} from '../types';
 
 const STORAGE_KEY = 'chasing-practice-cards';
 const RECORDS_KEY = 'chasing-practice-records';
 const DAILY_PLAN_KEY = 'chasing-daily-plan';
+const EXHIBIT_RISK_SNAPSHOT_KEY = 'chasing-exhibit-risk-snapshots';
+
+const EXHIBIT_RISK_LEVELS: ExhibitRiskLevel[] = ['low', 'medium', 'high', 'critical'];
+const EXHIBIT_RISK_SOURCES: ExhibitRiskSource[] = ['manual', 'review', 'plan', 'report'];
 
 export function loadCards(): Card[] {
   try {
@@ -50,6 +61,55 @@ export function loadDailyPlans(): DailyPlan[] {
 
 export function saveDailyPlans(plans: DailyPlan[]): void {
   localStorage.setItem(DAILY_PLAN_KEY, JSON.stringify(plans));
+}
+
+export function loadExhibitRiskSnapshots(): ExhibitRiskSnapshot[] {
+  try {
+    const raw = localStorage.getItem(EXHIBIT_RISK_SNAPSHOT_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(normalizeExhibitRiskSnapshot)
+      .filter((s): s is ExhibitRiskSnapshot => s !== null);
+  } catch {
+    return [];
+  }
+}
+
+export function saveExhibitRiskSnapshots(snapshots: ExhibitRiskSnapshot[]): void {
+  localStorage.setItem(EXHIBIT_RISK_SNAPSHOT_KEY, JSON.stringify(snapshots));
+}
+
+// 兼容旧版本快照数据：缺失字段补默认值，非法枚举回退，缺 id 重新生成
+function normalizeExhibitRiskSnapshot(raw: unknown): ExhibitRiskSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const item = raw as Partial<ExhibitRiskSnapshot>;
+  if (typeof item.cardId !== 'string' || !item.cardId) return null;
+
+  const now = new Date().toISOString();
+  return {
+    id: typeof item.id === 'string' && item.id ? item.id : generateId(),
+    cardId: item.cardId,
+    snapshotDate:
+      typeof item.snapshotDate === 'string' && item.snapshotDate
+        ? item.snapshotDate
+        : now.slice(0, 10),
+    riskLevel: EXHIBIT_RISK_LEVELS.includes(item.riskLevel as ExhibitRiskLevel)
+      ? (item.riskLevel as ExhibitRiskLevel)
+      : 'low',
+    riskReasons: Array.isArray(item.riskReasons)
+      ? item.riskReasons.filter((r): r is string => typeof r === 'string')
+      : [],
+    recommendedAction:
+      typeof item.recommendedAction === 'string' ? item.recommendedAction : '',
+    source: EXHIBIT_RISK_SOURCES.includes(item.source as ExhibitRiskSource)
+      ? (item.source as ExhibitRiskSource)
+      : 'manual',
+    resolved: item.resolved === true,
+    createdAt: typeof item.createdAt === 'string' ? item.createdAt : now,
+    updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : now
+  };
 }
 
 function seedData(): Card[] {
