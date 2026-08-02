@@ -1,5 +1,6 @@
-import type { Card, FilterCriteria, CardReviewStats } from '../types';
+import type { Card, FilterCriteria, CardReviewStats, ExhibitRiskSnapshot } from '../types';
 import { store } from '../store';
+import { getLatestExhibitRiskSnapshotPerCard } from './exhibitRisk';
 
 export function filterCards(
   cards: Card[],
@@ -10,8 +11,27 @@ export function filterCards(
     statsMap.set(card.id, store.getCardReviewStats(card.id));
   }
 
+  const riskSnapshotMap: Map<string, ExhibitRiskSnapshot> = getLatestExhibitRiskSnapshotPerCard(
+    store.getExhibitRiskSnapshots()
+  );
+
   let result = cards.filter((card) => {
     const stats = statsMap.get(card.id)!;
+    const risk = riskSnapshotMap.get(card.id);
+    const isUnresolvedCritical =
+      risk && !risk.resolved && risk.riskLevel === 'critical';
+
+    if (criteria.riskLevel) {
+      if (isUnresolvedCritical) {
+        return true;
+      }
+      if (!risk || risk.riskLevel !== criteria.riskLevel) {
+        return false;
+      }
+      if (!criteria.includeResolvedRisk && risk.resolved) {
+        return false;
+      }
+    }
 
     if (criteria.metalSpec && criteria.metalSpec !== card.metalSpec) {
       return false;

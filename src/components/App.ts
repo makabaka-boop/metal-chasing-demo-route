@@ -107,13 +107,15 @@ export class App {
     const alerts = validateAll(all);
     this.alertPanel.update(alerts);
 
+    const riskSnapshotMap = store.getLatestExhibitRiskSnapshotMap();
+
     if (!this.isRouteMode) {
       const filtered = filterCards(all, this.criteria);
       this.cardGrid.update(filtered);
     } else {
       const filtered = filterCards(all, this.criteria);
-      const route = generatePracticeRoute(filtered);
-      this.routeView.update(route);
+      const route = generatePracticeRoute(filtered, riskSnapshotMap);
+      this.routeView.update(route, riskSnapshotMap);
     }
 
     this.toolbar.refresh();
@@ -133,14 +135,15 @@ export class App {
   private handleExport(): void {
     const all = store.getCards();
     const filtered = filterCards(all, this.criteria);
+    const riskSnapshotMap = store.getLatestExhibitRiskSnapshotMap();
     const data = this.isRouteMode
-      ? generatePracticeRoute(filtered)
+      ? generatePracticeRoute(filtered, riskSnapshotMap)
       : filtered;
     if (data.length === 0) {
       alert('暂无数据可导出');
       return;
     }
-    exportToCSV(data);
+    exportToCSV(data, riskSnapshotMap);
   }
 
   private toggleRouteMode(): void {

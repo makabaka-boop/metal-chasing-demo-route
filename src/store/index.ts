@@ -14,7 +14,11 @@ import type {
   OwnerStat,
   FrequentMistake,
   UnstableUnpracticedCard,
-  DailyPlanCompletion
+  DailyPlanCompletion,
+  ExhibitRiskSnapshot,
+  ExhibitRiskSnapshotInput,
+  ExhibitRiskReason,
+  ExhibitRiskLevel
 } from '../types';
 import { STABILITY_THRESHOLD } from '../types';
 import {
@@ -24,8 +28,16 @@ import {
   saveRecords,
   loadDailyPlans,
   saveDailyPlans,
-  generateId
+  loadExhibitRiskSnapshots,
+  saveExhibitRiskSnapshots,
+  generateId,
+  generateExhibitRiskId
 } from '../utils/storage';
+import {
+  sortExhibitRiskSnapshots,
+  evaluateExhibitRisk,
+  getLatestExhibitRiskSnapshotPerCard
+} from '../utils/exhibitRisk';
 import { formatDuration } from '../utils/router';
 
 type Listener = () => void;
@@ -47,12 +59,14 @@ class Store {
   private cards: Card[] = [];
   private records: PracticeRecord[] = [];
   private dailyPlans: DailyPlan[] = [];
+  private exhibitRiskSnapshots: ExhibitRiskSnapshot[] = [];
   private listeners: Set<Listener> = new Set();
 
   constructor() {
     this.cards = loadCards();
     this.records = loadRecords();
     this.dailyPlans = loadDailyPlans();
+    this.exhibitRiskSnapshots = loadExhibitRiskSnapshots();
   }
 
   subscribe(listener: Listener): () => void {
@@ -64,6 +78,7 @@ class Store {
     saveCards(this.cards);
     saveRecords(this.records);
     saveDailyPlans(this.dailyPlans);
+    saveExhibitRiskSnapshots(this.exhibitRiskSnapshots);
     for (const l of this.listeners) l();
   }
 
@@ -101,6 +116,7 @@ class Store {
   deleteCard(id: string): void {
     this.cards = this.cards.filter((c) => c.id !== id);
     this.records = this.records.filter((r) => r.cardId !== id);
+    this.exhibitRiskSnapshots = this.exhibitRiskSnapshots.filter((s) => s.cardId !== id);
     this.notify();
   }
 
@@ -184,6 +200,8 @@ class Store {
       }
     }
 
+    this.syncRiskAfterReview(record);
+
     this.notify();
     return record;
   }
@@ -221,6 +239,220 @@ class Store {
       completedCount: completedRecords.length,
       totalDurationMin: totalDuration
     };
+  }
+
+  getExhibitRiskSnapshots(cardId?: string): ExhibitRiskSnapshot[] {
+    const list = cardId
+      ? this.exhibitRiskSnapshots.filter((s) => s.cardId === cardId)
+      : [...this.exhibitRiskSnapshots];
+    return sortExhibitRiskSnapshots(list);
+  }
+
+  getLatestExhibitRiskSnapshotMap(): Map<string, ExhibitRiskSnapshot> {
+    return getLatestExhibitRiskSnapshotPerCard(this.exhibitRiskSnapshots);
+  }
+
+  upsertExhibitRiskSnapshot(data: ExhibitRiskSnapshotInput): ExhibitRiskSnapshot {
+    const now = new Date().toISOString();
+    const idx = data.id
+      ? this.exhibitRiskSnapshots.findIndex((s) => s.id === data.id)
+      : -1;
+
+    if (idx !== -1) {
+      const existing = this.exhibitRiskSnapshots[idx];
+      const updated: ExhibitRiskSnapshot = {
+        ...existing,
+        ...data,
+        id: existing.id,
+        createdAt: existing.createdAt,
+        updatedAt: now
+      };
+      this.exhibitRiskSnapshots[idx] = updated;
+      this.notify();
+      return updated;
+    }
+
+    const snapshot: ExhibitRiskSnapshot = {
+      id: data.id || generateExhibitRiskId(),
+      cardId: data.cardId,
+      snapshotDate: data.snapshotDate || getTodayStr(),
+      riskLevel: data.riskLevel,
+      riskReasons: data.riskReasons,
+      recommendedAction: data.recommendedAction,
+      source: data.source,
+      resolved: data.resolved ?? false,
+      createdAt: data.createdAt || now,
+      updatedAt: data.updatedAt || now
+    };
+    this.exhibitRiskSnapshots.push(snapshot);
+    this.notify();
+    return snapshot;
+  }
+
+  resolveExhibitRiskSnapshot(id: string): void {
+    const idx = this.exhibitRiskSnapshots.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    this.exhibitRiskSnapshots[idx] = {
+      ...this.exhibitRiskSnapshots[idx],
+      resolved: true,
+      updatedAt: new Date().toISOString()
+    };
+    this.notify();
+  }
+
+  deleteExhibitRiskSnapshot(id: string): void {
+    const next = this.exhibitRiskSnapshots.filter((s) => s.id !== id);
+    if (next.length === this.exhibitRiskSnapshots.length) return;
+    this.exhibitRiskSnapshots = next;
+    this.notify();
+  }
+
+  evaluateCardExhibitRisk(cardId: string): ExhibitRiskSnapshot | null {
+    const card = this.getCard(cardId);
+    if (!card) return null;
+
+    const stats = this.getCardReviewStats(cardId);
+    const plan = this.getTodayPlan();
+    const item = plan?.items.find((i) => i.cardId === cardId);
+
+    const evaluation = evaluateExhibitRisk({
+      card,
+      stats,
+      todayPlanItemStatus: item?.status ?? null,
+      todayPlanStatus: plan?.status ?? null
+    });
+
+    return this.upsertExhibitRiskSnapshot({
+      cardId,
+      snapshotDate: getTodayStr(),
+      riskLevel: evaluation.riskLevel,
+      riskReasons: evaluation.riskReasons,
+      recommendedAction: evaluation.recommendedAction,
+      source: 'review',
+      resolved: false
+    });
+  }
+
+  private syncRiskAfterReview(record: PracticeRecord): void {
+    const { cardId, result, durationMin, problems } = record;
+    const card = this.getCard(cardId);
+    if (!card) return;
+
+    const stats = this.getCardReviewStats(cardId);
+
+    if (stats.isStable) {
+      this.resolveReviewReportRisks(cardId);
+      return;
+    }
+
+    if (result === 'failed' || result === 'partial') {
+      const reasons: ExhibitRiskReason[] = ['review_issue'];
+
+      const deviation = Math.abs(durationMin - card.durationMin);
+      const deviationRatio = card.durationMin > 0
+        ? deviation / card.durationMin
+        : 0;
+      if (deviation >= 15 || deviationRatio >= 0.3) {
+        reasons.push('duration_deviation');
+      }
+      if (!stats.isStable) {
+        reasons.push('unstable');
+      }
+
+      const problemSummary = problems.trim();
+      const level = this.deriveReviewRiskLevel(reasons, result);
+      const actionParts: string[] = [];
+      if (problemSummary) {
+        actionParts.push(`跟进问题：${problemSummary.slice(0, 40)}`);
+      }
+      if (reasons.includes('duration_deviation')) {
+        actionParts.push(
+          `实际工时 ${durationMin} 分钟与预计 ${card.durationMin} 分钟偏差较大，需校准节奏`
+        );
+      }
+      if (result === 'failed') {
+        actionParts.push('本次复核未通过，展前安排一次专项补练');
+      } else {
+        actionParts.push('本次部分确认，补练薄弱环节后再复核');
+      }
+
+      this.upsertReviewRiskSnapshot(
+        cardId,
+        record.date,
+        level,
+        reasons,
+        actionParts.join('；') + '。'
+      );
+    }
+  }
+
+  private deriveReviewRiskLevel(
+    reasons: ExhibitRiskReason[],
+    result: PracticeRecord['result']
+  ): ExhibitRiskLevel {
+    if (result === 'failed') {
+      if (reasons.includes('duration_deviation') && reasons.includes('unstable')) {
+        return 'critical';
+      }
+      if (reasons.length >= 2) return 'high';
+      return 'medium';
+    }
+    if (result === 'partial') {
+      if (reasons.includes('duration_deviation') || reasons.includes('unstable')) {
+        return 'medium';
+      }
+      return 'low';
+    }
+    return 'low';
+  }
+
+  private upsertReviewRiskSnapshot(
+    cardId: string,
+    snapshotDate: string,
+    riskLevel: ExhibitRiskLevel,
+    riskReasons: ExhibitRiskReason[],
+    recommendedAction: string
+  ): void {
+    const existing = this.exhibitRiskSnapshots.find(
+      (s) =>
+        s.cardId === cardId &&
+        s.source === 'review' &&
+        s.snapshotDate === snapshotDate &&
+        !s.resolved
+    );
+
+    const payload: ExhibitRiskSnapshotInput = {
+      id: existing?.id,
+      cardId,
+      snapshotDate,
+      riskLevel,
+      riskReasons,
+      recommendedAction,
+      source: 'review',
+      resolved: false,
+      createdAt: existing?.createdAt
+    };
+
+    this.upsertExhibitRiskSnapshot(payload);
+  }
+
+  private resolveReviewReportRisks(cardId: string): void {
+    const now = new Date().toISOString();
+    let changed = false;
+    this.exhibitRiskSnapshots = this.exhibitRiskSnapshots.map((s) => {
+      if (
+        s.cardId === cardId &&
+        !s.resolved &&
+        (s.source === 'review' || s.source === 'report')
+      ) {
+        changed = true;
+        return { ...s, resolved: true, updatedAt: now };
+      }
+      return s;
+    });
+    if (changed) {
+      saveExhibitRiskSnapshots(this.exhibitRiskSnapshots);
+    }
   }
 
   getTodayPlan(): DailyPlan | null {
@@ -621,12 +853,30 @@ class Store {
       }
     }
 
+    const involvedIds = new Set(cards.map((c) => c.id));
+    const latestRiskMap = getLatestExhibitRiskSnapshotPerCard(
+      this.exhibitRiskSnapshots
+    );
+    let unresolvedRiskCount = 0;
+    let criticalRiskCount = 0;
+    let reviewRiskCount = 0;
+    for (const [cardId, snapshot] of latestRiskMap) {
+      if (!involvedIds.has(cardId)) continue;
+      if (snapshot.resolved) continue;
+      unresolvedRiskCount++;
+      if (snapshot.riskLevel === 'critical') criticalRiskCount++;
+      if (snapshot.source === 'review') reviewRiskCount++;
+    }
+
     return {
       totalPracticeCount,
       totalDurationMin,
       completionRate,
       stableCardCount,
-      needFollowUpCardCount
+      needFollowUpCardCount,
+      unresolvedRiskCount,
+      criticalRiskCount,
+      reviewRiskCount
     };
   }
 

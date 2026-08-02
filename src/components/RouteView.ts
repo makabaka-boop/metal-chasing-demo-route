@@ -1,8 +1,11 @@
-import type { Card } from '../types';
+import type { Card, ExhibitRiskSnapshot } from '../types';
 import {
   STATUS_LABELS,
   STATUS_COLORS,
-  DIFFICULTY_LABELS
+  DIFFICULTY_LABELS,
+  EXHIBIT_RISK_LEVEL_LABELS,
+  EXHIBIT_RISK_LEVEL_COLORS,
+  EXHIBIT_RISK_REASON_LABELS
 } from '../types';
 import { formatDuration, estimateTotalDuration } from '../utils/router';
 import { store } from '../store';
@@ -21,15 +24,22 @@ export class RouteView {
     return this.el;
   }
 
-  update(route: Card[]): void {
+  update(
+    route: Card[],
+    riskSnapshotMap: Map<string, ExhibitRiskSnapshot> = store.getLatestExhibitRiskSnapshotMap()
+  ): void {
     const total = estimateTotalDuration(route);
     const doneCount = route.filter((c) => store.isCardDoneToday(c.id)).length;
+    const unresolvedCriticalCount = route.filter((c) => {
+      const risk = riskSnapshotMap.get(c.id);
+      return risk && !risk.resolved && risk.riskLevel === 'critical';
+    }).length;
 
     this.el.innerHTML = `
       <div class="route-header">
         <div class="route-info">
           <h2>🗺️ 演示路线</h2>
-          <p class="muted">按工艺难度递增排列，共 ${route.length} 张样片 · 预计总工时 ${formatDuration(total)}</p>
+          <p class="muted">按工艺难度递增排列，共 ${route.length} 张样片 · 预计总工时 ${formatDuration(total)}${unresolvedCriticalCount > 0 ? ` · <span style="color:${EXHIBIT_RISK_LEVEL_COLORS.critical};font-weight:600">${unresolvedCriticalCount} 张紧急风险必须优先讲解</span>` : ''}</p>
         </div>
         <div class="route-progress">
           <div class="progress-bar">
@@ -48,6 +58,8 @@ export class RouteView {
                     const stats = store.getCardReviewStats(c.id);
                     const inPlan = store.isCardInTodayPlan(c.id);
                     const planStatus = store.getTodayPlanItemStatus(c.id);
+                    const risk = riskSnapshotMap.get(c.id);
+                    const isCritical = risk && !risk.resolved && risk.riskLevel === 'critical';
 
                     let planBadge = '';
                     if (inPlan && planStatus) {
@@ -60,13 +72,21 @@ export class RouteView {
                       planBadge = `<span class="route-plan-badge plan-status-${planStatus}">📋 ${statusLabels[planStatus]}</span>`;
                     }
 
+                    const riskBadge = risk
+                      ? `<span class="route-risk-badge" style="background:${EXHIBIT_RISK_LEVEL_COLORS[risk.riskLevel]}">⚠ ${EXHIBIT_RISK_LEVEL_LABELS[risk.riskLevel]}${risk.resolved ? '·已解除' : ''}</span>`
+                      : '';
+
+                    const riskReasons = risk && risk.riskReasons.length > 0
+                      ? `<div class="route-risk-reasons" style="color:${EXHIBIT_RISK_LEVEL_COLORS[risk.riskLevel]}">🚨 ${risk.riskReasons.map((r) => EXHIBIT_RISK_REASON_LABELS[r]).join('、')}</div>`
+                      : '';
+
                     return `
-              <div class="route-step ${store.isCardDoneToday(c.id) ? 'is-done' : ''}" data-id="${c.id}">
+              <div class="route-step ${store.isCardDoneToday(c.id) ? 'is-done' : ''} ${isCritical ? 'is-critical-risk' : ''}" data-id="${c.id}">
                 <div class="route-marker" style="background:var(--diff-${c.difficulty})">
                   <span>${idx + 1}</span>
                 </div>
                 <div class="route-line"></div>
-                <div class="route-card" style="border-left:3px solid var(--diff-${c.difficulty})">
+                <div class="route-card" style="border-left:3px solid ${isCritical ? EXHIBIT_RISK_LEVEL_COLORS.critical : `var(--diff-${c.difficulty})`}">
                   <div class="route-card-head">
                     <div>
                       <span class="card-number">${c.patternNumber}</span>
@@ -74,6 +94,7 @@ export class RouteView {
                       <span class="card-badge" style="background:${STATUS_COLORS[c.status]}">${STATUS_LABELS[c.status]}</span>
                       ${stats.isStable ? '<span class="route-stable-badge">✅ 稳定</span>' : ''}
                       ${planBadge}
+                      ${riskBadge}
                     </div>
                     <label class="route-check">
                       <input type="checkbox" ${store.isCardDoneToday(c.id) ? 'checked' : ''} />
@@ -90,6 +111,8 @@ export class RouteView {
                     </div>
                     ${c.steps ? `<p class="route-steps">${c.steps.split('\n').slice(0, 2).join(' / ')}</p>` : ''}
                     ${c.mistakes ? `<div class="route-mistakes">⚠ ${c.mistakes}</div>` : ''}
+                    ${risk && risk.recommendedAction ? `<div class="route-risk-action">💡 ${risk.recommendedAction}</div>` : ''}
+                    ${riskReasons}
                   </div>
                 </div>
               </div>

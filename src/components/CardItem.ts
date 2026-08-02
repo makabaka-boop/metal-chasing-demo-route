@@ -1,11 +1,20 @@
-import type { Card } from '../types';
-import { STATUS_LABELS, STATUS_COLORS, DIFFICULTY_LABELS, STABILITY_THRESHOLD } from '../types';
+import type { Card, ExhibitRiskSnapshot } from '../types';
+import {
+  STATUS_LABELS,
+  STATUS_COLORS,
+  DIFFICULTY_LABELS,
+  STABILITY_THRESHOLD,
+  EXHIBIT_RISK_LEVEL_LABELS,
+  EXHIBIT_RISK_LEVEL_COLORS,
+  EXHIBIT_RISK_REASON_LABELS
+} from '../types';
 import { formatDuration } from '../utils/router';
 import { store } from '../store';
 
 export class CardItem {
   private el: HTMLElement;
   private card: Card;
+  private risk: ExhibitRiskSnapshot | undefined;
   private isSelected = false;
   private isHighlighted = false;
   private onEdit: (id: string) => void;
@@ -18,6 +27,7 @@ export class CardItem {
 
   constructor(
     card: Card,
+    risk: ExhibitRiskSnapshot | undefined,
     handlers: {
       onEdit: (id: string) => void;
       onDelete: (id: string) => void;
@@ -29,6 +39,7 @@ export class CardItem {
     }
   ) {
     this.card = card;
+    this.risk = risk;
     this.onEdit = handlers.onEdit;
     this.onDelete = handlers.onDelete;
     this.onDuplicate = handlers.onDuplicate;
@@ -64,8 +75,9 @@ export class CardItem {
     if (cb) cb.checked = v;
   }
 
-  update(card: Card): void {
+  update(card: Card, risk?: ExhibitRiskSnapshot): void {
     this.card = card;
+    this.risk = risk;
     this.render();
     if (this.isSelected) this.el.classList.add('card-selected');
     if (this.isHighlighted) this.el.classList.add('card-highlight');
@@ -79,6 +91,10 @@ export class CardItem {
     const inPlan = store.isCardInTodayPlan(c.id);
     const planStatus = store.getTodayPlanItemStatus(c.id);
 
+    const risk = this.risk;
+    const visibleReasons = risk?.riskReasons.slice(0, 2) ?? [];
+    const remainingReasons = risk ? Math.max(0, risk.riskReasons.length - visibleReasons.length) : 0;
+
     let planBadge = '';
     if (inPlan && planStatus) {
       const statusLabels: Record<string, string> = {
@@ -90,8 +106,19 @@ export class CardItem {
       planBadge = `<span class="plan-status-badge plan-status-${planStatus}">📋 ${statusLabels[planStatus]}</span>`;
     }
 
+    const riskBadge = risk
+      ? `<span class="card-risk-badge risk-${risk.riskLevel}${risk.resolved ? ' is-resolved' : ''}" style="background:${EXHIBIT_RISK_LEVEL_COLORS[risk.riskLevel]}">⚠ ${EXHIBIT_RISK_LEVEL_LABELS[risk.riskLevel]}${risk.resolved ? '·已解除' : ''}</span>`
+      : '';
+
+    const riskReasonsHtml = visibleReasons.length > 0
+      ? `<div class="card-risk-reasons">
+          ${visibleReasons.map((r) => `<span class="card-risk-reason" style="color:${EXHIBIT_RISK_LEVEL_COLORS[risk!.riskLevel]}">· ${EXHIBIT_RISK_REASON_LABELS[r]}</span>`).join('')}
+          ${remainingReasons > 0 ? `<span class="card-risk-more">+${remainingReasons}</span>` : ''}
+        </div>`
+      : '';
+
     this.el.innerHTML = `
-      <div class="card-header" style="border-left:4px solid ${STATUS_COLORS[c.status]}">
+      <div class="card-header" style="border-left:4px solid ${risk && !risk.resolved ? EXHIBIT_RISK_LEVEL_COLORS[risk.riskLevel] : STATUS_COLORS[c.status]}">
         <label class="card-select-wrap">
           <input type="checkbox" class="card-select" ${this.isSelected ? 'checked' : ''} />
         </label>
@@ -100,6 +127,7 @@ export class CardItem {
           <span class="card-spec">${c.metalSpec}</span>
         </div>
         ${stats.isStable ? '<span class="stable-badge" title="工艺表现已稳定">✅ 稳定</span>' : ''}
+        ${riskBadge}
         ${planBadge}
         <button class="btn-icon card-star" title="${c.starred ? '取消收藏' : '重点收藏'}">
           ${c.starred ? '⭐' : '☆'}
@@ -119,6 +147,7 @@ export class CardItem {
         <div class="card-preview">
           ${stepsPreview ? `<p>${stepsPreview}${c.steps.length > 40 ? '...' : ''}</p>` : '<p class="muted">暂无步骤描述</p>'}
         </div>
+        ${riskReasonsHtml}
         ${c.mistakes ? `<div class="card-mistakes">⚠ ${c.mistakes.slice(0, 30)}${c.mistakes.length > 30 ? '...' : ''}</div>` : ''}
         ${c.reviewNotes ? `<div class="card-review">💡 ${c.reviewNotes.slice(0, 30)}${c.reviewNotes.length > 30 ? '...' : ''}</div>` : ''}
         ${stats.practiceCount > 0 && !stats.isStable ? `<div class="card-stability-progress">工艺稳定度：${stats.completedCount}/${STABILITY_THRESHOLD}</div>` : ''}

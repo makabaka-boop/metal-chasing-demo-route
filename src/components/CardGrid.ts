@@ -1,5 +1,7 @@
-import type { Card } from '../types';
+import type { Card, ExhibitRiskSnapshot } from '../types';
 import { CardItem } from './CardItem';
+import { store } from '../store';
+import { getLatestExhibitRiskSnapshotPerCard } from '../utils/exhibitRisk';
 
 export class CardGrid {
   private el: HTMLElement;
@@ -61,6 +63,9 @@ export class CardGrid {
   }
 
   update(cards: Card[]): void {
+    const riskSnapshotMap: Map<string, ExhibitRiskSnapshot> =
+      getLatestExhibitRiskSnapshotPerCard(store.getExhibitRiskSnapshots());
+
     const existing = new Set(this.items.keys());
     const current = new Set(cards.map((c) => c.id));
 
@@ -75,9 +80,9 @@ export class CardGrid {
     for (const card of cards) {
       const existingItem = this.items.get(card.id);
       if (existingItem) {
-        existingItem.update(card);
+        existingItem.update(card, riskSnapshotMap.get(card.id));
       } else {
-        const item = new CardItem(card, {
+        const item = new CardItem(card, riskSnapshotMap.get(card.id), {
           onEdit: this.handlers.onEdit,
           onDelete: this.handlers.onDelete,
           onDuplicate: this.handlers.onDuplicate,

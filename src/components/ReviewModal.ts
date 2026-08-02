@@ -1,9 +1,12 @@
 import { store } from '../store';
-import type { PracticeRecord, ReviewResult } from '../types';
+import type { PracticeRecord, ReviewResult, ExhibitRiskSnapshot } from '../types';
 import {
   REVIEW_RESULT_LABELS,
   REVIEW_RESULT_COLORS,
-  STABILITY_THRESHOLD
+  STABILITY_THRESHOLD,
+  EXHIBIT_RISK_LEVEL_LABELS,
+  EXHIBIT_RISK_LEVEL_COLORS,
+  EXHIBIT_RISK_REASON_LABELS
 } from '../types';
 import { formatDuration } from '../utils/router';
 
@@ -11,6 +14,7 @@ export class ReviewModal {
   private overlay: HTMLElement;
   private el: HTMLElement;
   private cardId: string | null = null;
+  private lastRiskFeedback = '';
 
   constructor() {
     this.overlay = document.createElement('div');
@@ -42,6 +46,7 @@ export class ReviewModal {
 
     const records = store.getRecords(this.cardId);
     const stats = store.getCardReviewStats(this.cardId);
+    const risk = store.getLatestExhibitRiskSnapshotMap().get(this.cardId);
     const today = new Date().toISOString().slice(0, 10);
 
     this.el.innerHTML = `
@@ -69,9 +74,20 @@ export class ReviewModal {
           </div>
         </div>
         ${stats.lastPracticeDate ? `<div class="review-last-date">最近试作：${stats.lastPracticeDate}</div>` : ''}
+        ${risk ? `
+          <div class="review-risk-card" style="border-left:4px solid ${EXHIBIT_RISK_LEVEL_COLORS[risk.riskLevel]}">
+            <div class="review-risk-head">
+              <span class="review-risk-badge" style="background:${EXHIBIT_RISK_LEVEL_COLORS[risk.riskLevel]}">展品风险 · ${EXHIBIT_RISK_LEVEL_LABELS[risk.riskLevel]}</span>
+              <span class="review-risk-date">快照：${risk.snapshotDate}${risk.resolved ? ' · 已解除' : ''}</span>
+            </div>
+            ${risk.riskReasons.length > 0 ? `<div class="review-risk-reasons">${risk.riskReasons.map((r) => EXHIBIT_RISK_REASON_LABELS[r]).join('、')}</div>` : ''}
+            ${risk.recommendedAction ? `<div class="review-risk-action">💡 ${risk.recommendedAction}</div>` : ''}
+          </div>
+        ` : ''}
 
         <div class="review-form-section">
           <h3 class="review-section-title">➕ 记录本次试作</h3>
+          ${this.lastRiskFeedback ? `<div class="review-risk-feedback">${this.lastRiskFeedback}</div>` : ''}
           <form class="review-form">
             <div class="form-row">
               <div class="form-group">
@@ -209,7 +225,31 @@ export class ReviewModal {
       problems,
       gains
     });
+
+    const risk = store.getLatestExhibitRiskSnapshotMap().get(this.cardId);
+    this.lastRiskFeedback = this.buildRiskFeedback(result, risk);
     this.render();
+  }
+
+  private buildRiskFeedback(
+    result: ReviewResult,
+    risk: ExhibitRiskSnapshot | undefined
+  ): string {
+    if (result === 'completed') {
+      const stats = this.cardId ? store.getCardReviewStats(this.cardId) : null;
+      if (stats?.isStable) {
+        return '✅ 已达到稳定阈值，系统已自动解除该样片的复核/报告类风险。';
+      }
+      return '';
+    }
+    if (result === 'failed' || result === 'partial') {
+      if (risk && risk.source === 'review' && !risk.resolved) {
+        return `⚠ 已自动登记 ${result === 'failed' ? '高' : '中'}风险快照（${risk.riskReasons
+          .map((r) => EXHIBIT_RISK_REASON_LABELS[r])
+          .join('、')}），请尽快安排补练。`;
+      }
+    }
+    return '';
   }
 
   private showError(msg: string, el: HTMLElement | null): void {

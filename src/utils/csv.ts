@@ -1,5 +1,11 @@
-import type { Card } from '../types';
-import { STATUS_LABELS, DIFFICULTY_LABELS } from '../types';
+import type { Card, ExhibitRiskSnapshot } from '../types';
+import {
+  STATUS_LABELS,
+  DIFFICULTY_LABELS,
+  EXHIBIT_RISK_LEVEL_LABELS,
+  EXHIBIT_RISK_REASON_LABELS,
+  EXHIBIT_RISK_SOURCE_LABELS
+} from '../types';
 import { store } from '../store';
 
 const HEADERS = [
@@ -17,12 +23,24 @@ const HEADERS = [
   '累计确认次数',
   '累计实际工时(分钟)',
   '最近试作日期',
-  '是否已稳定'
+  '是否已稳定',
+  '风险等级',
+  '风险原因',
+  '建议动作',
+  '风险来源',
+  '风险状态',
+  '快照日期'
 ];
 
-export function exportToCSV(cards: Card[]): void {
+export function exportToCSV(
+  cards: Card[],
+  riskSnapshotMap?: Map<string, ExhibitRiskSnapshot>
+): void {
+  const snapshotMap = riskSnapshotMap || store.getLatestExhibitRiskSnapshotMap();
+
   const rows = cards.map((c) => {
     const stats = store.getCardReviewStats(c.id);
+    const risk = snapshotMap.get(c.id);
 
     return [
       c.patternNumber,
@@ -40,6 +58,12 @@ export function exportToCSV(cards: Card[]): void {
       String(stats.totalDurationMin),
       stats.lastPracticeDate || '',
       stats.isStable ? '是' : '否',
+      risk ? EXHIBIT_RISK_LEVEL_LABELS[risk.riskLevel] : '',
+      risk ? risk.riskReasons.map((r) => EXHIBIT_RISK_REASON_LABELS[r]).join('；') : '',
+      risk ? risk.recommendedAction : '',
+      risk ? EXHIBIT_RISK_SOURCE_LABELS[risk.source] : '',
+      risk ? (risk.resolved ? '已解除' : '未解除') : '',
+      risk ? risk.snapshotDate : ''
     ];
   });
 

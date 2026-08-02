@@ -1,6 +1,11 @@
 import { store } from '../store';
-import type { FilterCriteria, CardStatus } from '../types';
-import { STATUS_LABELS, METAL_SPECS, DIFFICULTY_LABELS } from '../types';
+import type { FilterCriteria, CardStatus, ExhibitRiskLevel } from '../types';
+import {
+  STATUS_LABELS,
+  METAL_SPECS,
+  DIFFICULTY_LABELS,
+  EXHIBIT_RISK_LEVEL_LABELS
+} from '../types';
 import { collectOwners, collectMetalSpecs } from '../utils/filters';
 
 export class Toolbar {
@@ -169,6 +174,18 @@ export class Toolbar {
             <option value="unstable" ${sel(c.stableFilter, 'unstable')}>未稳定</option>
           </select>
         </div>
+        <div class="filter-group">
+          <label>展品风险</label>
+          <select class="filter-select" data-filter="riskLevel">
+            <option value="" ${!c.riskLevel ? 'selected' : ''}>全部</option>
+            ${(['critical', 'high', 'medium', 'low'] as ExhibitRiskLevel[])
+              .map(
+                (level) =>
+                  `<option value="${level}" ${c.riskLevel === level ? 'selected' : ''}>${EXHIBIT_RISK_LEVEL_LABELS[level]}</option>`
+              )
+              .join('')}
+          </select>
+        </div>
         <div class="filter-group filter-duration">
         <label>试作次数</label>
           <div class="duration-inputs">
@@ -264,6 +281,8 @@ export class Toolbar {
     const starredOnly = get<HTMLInputElement>('starredOnly')?.checked || undefined;
     const sortBy = (get<HTMLSelectElement>('sortBy')?.value as FilterCriteria['sortBy']) || 'default';
     const stableFilter = (get<HTMLSelectElement>('stableFilter')?.value as FilterCriteria['stableFilter']) || 'all';
+    const riskLevelRaw = get<HTMLSelectElement>('riskLevel')?.value;
+    const riskLevel = riskLevelRaw ? (riskLevelRaw as ExhibitRiskLevel) : undefined;
     const minPracticeCountRaw = get<HTMLInputElement>('minPracticeCount')?.value;
     const minPracticeCount = minPracticeCountRaw ? Number(minPracticeCountRaw) : undefined;
     const maxPracticeCountRaw = get<HTMLInputElement>('maxPracticeCount')?.value;
@@ -283,6 +302,7 @@ export class Toolbar {
       starredOnly,
       sortBy,
       stableFilter,
+      riskLevel,
       minPracticeCount,
       maxPracticeCount,
       lastPracticeDaysAgo,
