@@ -1,5 +1,5 @@
 import type { Card } from '../types';
-import { STATUS_LABELS, STATUS_COLORS, DIFFICULTY_LABELS, STABILITY_THRESHOLD } from '../types';
+import { STATUS_LABELS, STATUS_COLORS, DIFFICULTY_LABELS, STABILITY_THRESHOLD, EXHIBIT_RISK_LEVEL_LABELS } from '../types';
 import { formatDuration } from '../utils/router';
 import { store } from '../store';
 
@@ -78,6 +78,18 @@ export class CardItem {
     const stats = store.getCardReviewStats(c.id);
     const inPlan = store.isCardInTodayPlan(c.id);
     const planStatus = store.getTodayPlanItemStatus(c.id);
+    // 直接复用快照数据（已按等级排序），不重新拼装风险判断
+    const risk = store.getExhibitRiskSnapshots(c.id).find((s) => !s.resolved);
+    const riskBadge = risk
+      ? `<span class="risk-badge risk-${risk.riskLevel}" title="${risk.recommendedAction}">🛡 ${EXHIBIT_RISK_LEVEL_LABELS[risk.riskLevel]}</span>`
+      : '';
+    const riskReasonsHtml =
+      risk && risk.riskReasons.length > 0
+        ? `<ul class="card-risk-reasons risk-${risk.riskLevel}">${risk.riskReasons
+            .slice(0, 2)
+            .map((r) => `<li>${r}</li>`)
+            .join('')}</ul>`
+        : '';
 
     let planBadge = '';
     if (inPlan && planStatus) {
@@ -101,6 +113,7 @@ export class CardItem {
         </div>
         ${stats.isStable ? '<span class="stable-badge" title="工艺表现已稳定">✅ 稳定</span>' : ''}
         ${planBadge}
+        ${riskBadge}
         <button class="btn-icon card-star" title="${c.starred ? '取消收藏' : '重点收藏'}">
           ${c.starred ? '⭐' : '☆'}
         </button>
@@ -116,6 +129,7 @@ export class CardItem {
           <span class="card-owner">👤 ${c.owner || '未分配'}</span>
           ${stats.practiceCount > 0 ? `<span class="card-practice-count">📝 试作${stats.practiceCount}次</span>` : ''}
         </div>
+        ${riskReasonsHtml}
         <div class="card-preview">
           ${stepsPreview ? `<p>${stepsPreview}${c.steps.length > 40 ? '...' : ''}</p>` : '<p class="muted">暂无步骤描述</p>'}
         </div>

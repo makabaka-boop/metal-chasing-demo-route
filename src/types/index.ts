@@ -99,6 +99,7 @@ export interface FilterCriteria {
   starredOnly?: boolean;
   sortBy?: 'default' | 'lastPracticeDate' | 'practiceCount' | 'isStable';
   stableFilter?: 'all' | 'stable' | 'unstable';
+  riskLevels?: ExhibitRiskLevel[];
   minPracticeCount?: number;
   maxPracticeCount?: number;
   lastPracticeDaysAgo?: number;
@@ -172,6 +173,8 @@ export interface ReportSummaryStats {
   completionRate: number;
   stableCardCount: number;
   needFollowUpCardCount: number;
+  unresolvedRiskCount: number;
+  criticalRiskCount: number;
 }
 
 export interface DifficultyStat {
@@ -226,3 +229,53 @@ export interface TrainingReport {
   unstableUnpracticedCards: UnstableUnpracticedCard[];
   dailyPlanCompletions: DailyPlanCompletion[];
 }
+
+export type ExhibitRiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+export type ExhibitRiskSource = 'manual' | 'review' | 'plan' | 'report';
+
+export interface ExhibitRiskSnapshot {
+  id: string;
+  cardId: string;
+  snapshotDate: string;
+  riskLevel: ExhibitRiskLevel;
+  riskReasons: string[];
+  recommendedAction: string;
+  source: ExhibitRiskSource;
+  resolved: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ExhibitRiskSnapshotInput = Omit<
+  ExhibitRiskSnapshot,
+  'id' | 'createdAt' | 'updatedAt'
+> & { id?: string };
+
+export const EXHIBIT_RISK_LEVEL_LABELS: Record<ExhibitRiskLevel, string> = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+  critical: '严重风险'
+};
+
+export const EXHIBIT_RISK_LEVEL_COLORS: Record<ExhibitRiskLevel, string> = {
+  low: '#27AE60',
+  medium: '#F39C12',
+  high: '#E67E22',
+  critical: '#E74C3C'
+};
+
+export const EXHIBIT_RISK_LEVEL_ORDER: Record<ExhibitRiskLevel, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3
+};
+
+export const EXHIBIT_RISK_SOURCE_LABELS: Record<ExhibitRiskSource, string> = {
+  manual: '人工标记',
+  review: '工艺复核',
+  plan: '今日计划',
+  report: '排练报告'
+};

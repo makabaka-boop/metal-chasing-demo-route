@@ -2,7 +2,8 @@ import type { Card } from '../types';
 import {
   STATUS_LABELS,
   STATUS_COLORS,
-  DIFFICULTY_LABELS
+  DIFFICULTY_LABELS,
+  EXHIBIT_RISK_LEVEL_LABELS
 } from '../types';
 import { formatDuration, estimateTotalDuration } from '../utils/router';
 import { store } from '../store';
@@ -29,7 +30,7 @@ export class RouteView {
       <div class="route-header">
         <div class="route-info">
           <h2>🗺️ 演示路线</h2>
-          <p class="muted">按工艺难度递增排列，共 ${route.length} 张样片 · 预计总工时 ${formatDuration(total)}</p>
+          <p class="muted">critical 风险优先、high 次之，其余按工艺难度递增排列，共 ${route.length} 张样片 · 预计总工时 ${formatDuration(total)}</p>
         </div>
         <div class="route-progress">
           <div class="progress-bar">
@@ -48,6 +49,11 @@ export class RouteView {
                     const stats = store.getCardReviewStats(c.id);
                     const inPlan = store.isCardInTodayPlan(c.id);
                     const planStatus = store.getTodayPlanItemStatus(c.id);
+                    // 与卡片列表读取同一份快照，解释路线排序原因
+                    const risk = store.getExhibitRiskSnapshots(c.id).find((s) => !s.resolved);
+                    const riskBadge = risk
+                      ? `<span class="risk-badge risk-${risk.riskLevel}" title="${risk.recommendedAction}">🛡 ${EXHIBIT_RISK_LEVEL_LABELS[risk.riskLevel]}</span>`
+                      : '';
 
                     let planBadge = '';
                     if (inPlan && planStatus) {
@@ -74,6 +80,7 @@ export class RouteView {
                       <span class="card-badge" style="background:${STATUS_COLORS[c.status]}">${STATUS_LABELS[c.status]}</span>
                       ${stats.isStable ? '<span class="route-stable-badge">✅ 稳定</span>' : ''}
                       ${planBadge}
+                      ${riskBadge}
                     </div>
                     <label class="route-check">
                       <input type="checkbox" ${store.isCardDoneToday(c.id) ? 'checked' : ''} />
