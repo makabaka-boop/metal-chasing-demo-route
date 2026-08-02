@@ -1,6 +1,6 @@
 import { store } from '../store';
-import type { FilterCriteria, CardStatus } from '../types';
-import { STATUS_LABELS, METAL_SPECS, DIFFICULTY_LABELS } from '../types';
+import type { FilterCriteria, CardStatus, ExhibitRiskLevel } from '../types';
+import { STATUS_LABELS, METAL_SPECS, DIFFICULTY_LABELS, EXHIBIT_RISK_LEVEL_LABELS } from '../types';
 import { collectOwners, collectMetalSpecs } from '../utils/filters';
 
 export class Toolbar {
@@ -169,6 +169,19 @@ export class Toolbar {
             <option value="unstable" ${sel(c.stableFilter, 'unstable')}>未稳定</option>
           </select>
         </div>
+        <div class="filter-group">
+          <label>风险等级</label>
+          <select class="filter-select filter-risk-level" data-filter="riskLevel">
+            <option value="" ${!c.riskLevel ? 'selected' : ''}>全部</option>
+            ${(Object.keys(EXHIBIT_RISK_LEVEL_LABELS) as ExhibitRiskLevel[])
+              .map(
+                (r) =>
+                  `<option value="${r}" ${sel(c.riskLevel, r)}>${EXHIBIT_RISK_LEVEL_LABELS[r]}</option>`
+              )
+              .join('')}
+          </select>
+          <span class="filter-risk-hint" title="严重风险始终展示，不会被筛选隐藏">⚠ 严重风险始终展示</span>
+        </div>
         <div class="filter-group filter-duration">
         <label>试作次数</label>
           <div class="duration-inputs">
@@ -272,6 +285,7 @@ export class Toolbar {
     const lastPracticeDaysAgo = lastPracticeDaysAgoRaw ? Number(lastPracticeDaysAgoRaw) : undefined;
     const minLastPracticeDate = get<HTMLInputElement>('minLastPracticeDate')?.value || undefined;
     const maxLastPracticeDate = get<HTMLInputElement>('maxLastPracticeDate')?.value || undefined;
+    const riskLevel = (get<HTMLSelectElement>('riskLevel')?.value as ExhibitRiskLevel) || undefined;
 
     this.criteria = {
       metalSpec,
@@ -287,7 +301,8 @@ export class Toolbar {
       maxPracticeCount,
       lastPracticeDaysAgo,
       minLastPracticeDate,
-      maxLastPracticeDate
+      maxLastPracticeDate,
+      riskLevel
     };
     this.onChange(this.criteria);
   }

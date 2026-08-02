@@ -14,7 +14,8 @@ import type {
   OwnerStat,
   FrequentMistake,
   UnstableUnpracticedCard,
-  DailyPlanCompletion
+  DailyPlanCompletion,
+  ExhibitRiskSnapshot
 } from '../types';
 import { STABILITY_THRESHOLD } from '../types';
 import {
@@ -24,9 +25,20 @@ import {
   saveRecords,
   loadDailyPlans,
   saveDailyPlans,
+  loadExhibitRiskSnapshots,
+  saveExhibitRiskSnapshots,
   generateId
 } from '../utils/storage';
 import { formatDuration } from '../utils/router';
+import { assessExhibitRisk, isKeyWithoutExplanationNote } from '../utils/exhibitRisk';
+import type { ExhibitRiskFactors } from '../utils/exhibitRisk';
+import {
+  buildReviewRiskReasons,
+  reviewResultToRiskLevel,
+  findExistingReviewSnapshot,
+  isAutoResolvableOnStable,
+  buildRepresentativeRiskMap
+} from '../utils/exhibitRisk';
 
 type Listener = () => void;
 
@@ -47,12 +59,14 @@ class Store {
   private cards: Card[] = [];
   private records: PracticeRecord[] = [];
   private dailyPlans: DailyPlan[] = [];
+  private exhibitRiskSnapshots: ExhibitRiskSnapshot[] = [];
   private listeners: Set<Listener> = new Set();
 
   constructor() {
     this.cards = loadCards();
     this.records = loadRecords();
     this.dailyPlans = loadDailyPlans();
+    this.exhibitRiskSnapshots = loadExhibitRiskSnapshots();
   }
 
   subscribe(listener: Listener): () => void {
@@ -64,6 +78,7 @@ class Store {
     saveCards(this.cards);
     saveRecords(this.records);
     saveDailyPlans(this.dailyPlans);
+    saveExhibitRiskSnapshots(this.exhibitRiskSnapshots);
     for (const l of this.listeners) l();
   }
 
@@ -184,8 +199,58 @@ class Store {
       }
     }
 
+    // 复核结果自动沉淀 / 消解风险快照：模态框保存与今日计划“确认样片”
+    // 均经由 addRecord，统一走此路径，避免重复快照。
+    this.syncReviewRisk(record);
+
     this.notify();
     return record;
+  }
+
+  // 将一条复核记录沉淀为风险状态：
+  // - failed / partial → 通过 upsertExhibitRiskSnapshot 写入 source: 'review' 的快照，
+  //   按“卡片+日期”去重（命中当天已有 review 快照则携带其 id 更新），避免重复快照；
+  // - 达到稳定阈值 → 把该卡片未解决的 review / report 来源快照标记 resolved。
+  private syncReviewRisk(record: PracticeRecord): void {
+    const card = this.getCard(record.cardId);
+
+    if (record.result === 'failed' || record.result === 'partial') {
+      const reasons = buildReviewRiskReasons({
+        result: record.result,
+        actualDurationMin: record.durationMin,
+        plannedDurationMin: card?.durationMin ?? 0,
+        problems: record.problems
+      });
+      const existing = findExistingReviewSnapshot(
+        this.exhibitRiskSnapshots,
+        record.cardId,
+        record.date
+      );
+
+      this.upsertExhibitRiskSnapshot({
+        id: existing?.id,
+        cardId: record.cardId,
+        snapshotDate: record.date,
+        riskLevel: reviewResultToRiskLevel(record.result),
+        riskReasons: reasons,
+        recommendedAction:
+          record.result === 'failed'
+            ? '复核未通过，展前需返工并重新复核'
+            : '复核部分确认，展前需补足遗留问题',
+        source: 'review',
+        resolved: false
+      });
+    }
+
+    // 连续确认达到稳定阈值：自动消解该卡片来自复核/报告的未解决风险
+    if (this.getCardReviewStats(record.cardId).isStable) {
+      const toResolve = this.exhibitRiskSnapshots.filter(
+        (s) => s.cardId === record.cardId && isAutoResolvableOnStable(s)
+      );
+      for (const snap of toResolve) {
+        this.resolveExhibitRiskSnapshot(snap.id);
+      }
+    }
   }
 
   deleteRecord(recordId: string): void {
@@ -621,12 +686,21 @@ class Store {
       }
     }
 
+    // 复用已沉淀的风险快照统计“存在未解决风险的样片数”，不重复计算风险逻辑
+    const riskMap = buildRepresentativeRiskMap(this.exhibitRiskSnapshots);
+    const cardIdSet = new Set(cards.map((c) => c.id));
+    let activeRiskCardCount = 0;
+    for (const [cardId, snap] of riskMap) {
+      if (cardIdSet.has(cardId) && !snap.resolved) activeRiskCardCount++;
+    }
+
     return {
       totalPracticeCount,
       totalDurationMin,
       completionRate,
       stableCardCount,
-      needFollowUpCardCount
+      needFollowUpCardCount,
+      activeRiskCardCount
     };
   }
 
@@ -831,6 +905,101 @@ class Store {
     }
 
     return result;
+  }
+
+  // ============ 展品风险快照（ExhibitRisk） ============
+
+  // 汇总某卡片当前的五项风险因子，供纯函数评估复用，
+  // 保证 CSV 导出、工艺复核单、演示路线读到同一份判定输入。
+  getExhibitRiskFactors(cardId: string): ExhibitRiskFactors {
+    const card = this.getCard(cardId);
+    const stats = this.getCardReviewStats(cardId);
+
+    let todayPlanPostponedOrUnfinished = false;
+    const plan = this.getTodayPlan();
+    if (plan) {
+      const item = plan.items.find((i) => i.cardId === cardId);
+      if (item) {
+        todayPlanPostponedOrUnfinished =
+          item.status === 'skipped' ||
+          item.status === 'pending' ||
+          item.status === 'in_progress';
+      }
+    }
+
+    return {
+      unstable: !stats.isStable,
+      daysSinceLastPractice: daysSince(stats.lastPracticeDate),
+      needsExplanation: card?.status === 'need_help',
+      keyWithoutExplanationNote: card ? isKeyWithoutExplanationNote(card) : false,
+      todayPlanPostponedOrUnfinished
+    };
+  }
+
+  getExhibitRiskSnapshots(cardId?: string): ExhibitRiskSnapshot[] {
+    if (cardId) return this.exhibitRiskSnapshots.filter((s) => s.cardId === cardId);
+    return [...this.exhibitRiskSnapshots];
+  }
+
+  // 新增或更新快照：带 id 命中则更新，否则新建。
+  // 未显式给出 riskLevel/riskReasons/recommendedAction 时，
+  // 依据 PRD 开头规则由风险因子自动评估，避免各处重复计算。
+  upsertExhibitRiskSnapshot(
+    data: Partial<ExhibitRiskSnapshot> & { cardId: string }
+  ): ExhibitRiskSnapshot {
+    const now = new Date().toISOString();
+    const assessment = assessExhibitRisk(this.getExhibitRiskFactors(data.cardId));
+
+    const existingIdx = data.id
+      ? this.exhibitRiskSnapshots.findIndex((s) => s.id === data.id)
+      : -1;
+
+    if (existingIdx !== -1) {
+      const prev = this.exhibitRiskSnapshots[existingIdx];
+      const updated: ExhibitRiskSnapshot = {
+        ...prev,
+        ...data,
+        riskLevel: data.riskLevel ?? assessment.riskLevel,
+        riskReasons: data.riskReasons ?? assessment.riskReasons,
+        recommendedAction: data.recommendedAction ?? assessment.recommendedAction,
+        updatedAt: now
+      };
+      this.exhibitRiskSnapshots[existingIdx] = updated;
+      this.notify();
+      return updated;
+    }
+
+    const snapshot: ExhibitRiskSnapshot = {
+      id: data.id || generateId(),
+      cardId: data.cardId,
+      snapshotDate: data.snapshotDate ?? getTodayStr(),
+      riskLevel: data.riskLevel ?? assessment.riskLevel,
+      riskReasons: data.riskReasons ?? assessment.riskReasons,
+      recommendedAction: data.recommendedAction ?? assessment.recommendedAction,
+      source: data.source ?? 'manual',
+      resolved: data.resolved ?? false,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.exhibitRiskSnapshots.push(snapshot);
+    this.notify();
+    return snapshot;
+  }
+
+  resolveExhibitRiskSnapshot(id: string): void {
+    const idx = this.exhibitRiskSnapshots.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    this.exhibitRiskSnapshots[idx] = {
+      ...this.exhibitRiskSnapshots[idx],
+      resolved: true,
+      updatedAt: new Date().toISOString()
+    };
+    this.notify();
+  }
+
+  deleteExhibitRiskSnapshot(id: string): void {
+    this.exhibitRiskSnapshots = this.exhibitRiskSnapshots.filter((s) => s.id !== id);
+    this.notify();
   }
 }
 

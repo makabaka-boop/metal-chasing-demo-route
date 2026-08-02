@@ -1,5 +1,9 @@
 import type { Card, FilterCriteria, CardReviewStats } from '../types';
 import { store } from '../store';
+import {
+  buildRepresentativeRiskMap,
+  isAlwaysVisibleExhibitRisk
+} from './exhibitRisk';
 
 export function filterCards(
   cards: Card[],
@@ -10,8 +14,16 @@ export function filterCards(
     statsMap.set(card.id, store.getCardReviewStats(card.id));
   }
 
+  // 复用 store 的快照，按卡片聚合代表性风险；组件/筛选不重复计算风险判断
+  const riskMap = buildRepresentativeRiskMap(store.getExhibitRiskSnapshots());
+
   let result = cards.filter((card) => {
     const stats = statsMap.get(card.id)!;
+
+    // PRD 中段规则：未解决的 critical 快照永远不被普通筛选隐藏
+    const rep = riskMap.get(card.id);
+    const alwaysVisible = rep ? isAlwaysVisibleExhibitRisk(rep) : false;
+    if (alwaysVisible) return true;
 
     if (criteria.metalSpec && criteria.metalSpec !== card.metalSpec) {
       return false;
@@ -70,6 +82,10 @@ export function filterCards(
       cutoff.setDate(cutoff.getDate() - criteria.lastPracticeDaysAgo);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
       if (!stats.lastPracticeDate || stats.lastPracticeDate < cutoffStr) return false;
+    }
+    if (criteria.riskLevel) {
+      // 已解决或无快照的卡片不匹配任何风险等级筛选
+      if (!rep || rep.resolved || rep.riskLevel !== criteria.riskLevel) return false;
     }
     return true;
   });

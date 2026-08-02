@@ -2,10 +2,12 @@ import type { Card } from '../types';
 import {
   STATUS_LABELS,
   STATUS_COLORS,
-  DIFFICULTY_LABELS
+  DIFFICULTY_LABELS,
+  EXHIBIT_RISK_LEVEL_LABELS
 } from '../types';
 import { formatDuration, estimateTotalDuration } from '../utils/router';
 import { store } from '../store';
+import { pickRepresentativeExhibitRisk } from '../utils/exhibitRisk';
 
 export class RouteView {
   private el: HTMLElement;
@@ -60,8 +62,18 @@ export class RouteView {
                       planBadge = `<span class="route-plan-badge plan-status-${planStatus}">📋 ${statusLabels[planStatus]}</span>`;
                     }
 
+                    // 复用 store 快照的代表性风险，路线视图不重复计算
+                    const risk = pickRepresentativeExhibitRisk(store.getExhibitRiskSnapshots(c.id));
+                    const showRisk = risk && !risk.resolved;
+                    const riskBadge = showRisk
+                      ? `<span class="route-risk-badge risk-badge-${risk!.riskLevel}${risk!.riskLevel === 'critical' ? ' risk-badge-critical-pulse' : ''}" title="${risk!.recommendedAction}">⚠ ${EXHIBIT_RISK_LEVEL_LABELS[risk!.riskLevel]}</span>`
+                      : '';
+                    const riskReasons = showRisk && risk!.riskReasons.length > 0
+                      ? `<div class="route-risk-reasons risk-tone-${risk!.riskLevel}">${risk!.riskReasons.slice(0, 2).map((r) => `<span class="risk-reason">• ${r}</span>`).join('')}</div>`
+                      : '';
+
                     return `
-              <div class="route-step ${store.isCardDoneToday(c.id) ? 'is-done' : ''}" data-id="${c.id}">
+              <div class="route-step ${store.isCardDoneToday(c.id) ? 'is-done' : ''}${showRisk ? ' route-step-risk-' + risk!.riskLevel : ''}" data-id="${c.id}">
                 <div class="route-marker" style="background:var(--diff-${c.difficulty})">
                   <span>${idx + 1}</span>
                 </div>
@@ -73,6 +85,7 @@ export class RouteView {
                       <span class="diff-tag diff-${c.difficulty}">${DIFFICULTY_LABELS[c.difficulty]}</span>
                       <span class="card-badge" style="background:${STATUS_COLORS[c.status]}">${STATUS_LABELS[c.status]}</span>
                       ${stats.isStable ? '<span class="route-stable-badge">✅ 稳定</span>' : ''}
+                      ${riskBadge}
                       ${planBadge}
                     </div>
                     <label class="route-check">
@@ -88,6 +101,7 @@ export class RouteView {
                       ${c.starred ? '<span>⭐ 重点</span>' : ''}
                       ${stats.practiceCount > 0 ? `<span>📝 试作${stats.practiceCount}次</span>` : ''}
                     </div>
+                    ${riskReasons}
                     ${c.steps ? `<p class="route-steps">${c.steps.split('\n').slice(0, 2).join(' / ')}</p>` : ''}
                     ${c.mistakes ? `<div class="route-mistakes">⚠ ${c.mistakes}</div>` : ''}
                   </div>

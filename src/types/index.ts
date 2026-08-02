@@ -104,6 +104,7 @@ export interface FilterCriteria {
   lastPracticeDaysAgo?: number;
   minLastPracticeDate?: string;
   maxLastPracticeDate?: string;
+  riskLevel?: ExhibitRiskLevel;
 }
 
 export type AlertType =
@@ -172,6 +173,7 @@ export interface ReportSummaryStats {
   completionRate: number;
   stableCardCount: number;
   needFollowUpCardCount: number;
+  activeRiskCardCount: number;
 }
 
 export interface DifficultyStat {
@@ -226,3 +228,54 @@ export interface TrainingReport {
   unstableUnpracticedCards: UnstableUnpracticedCard[];
   dailyPlanCompletions: DailyPlanCompletion[];
 }
+
+// ============ 展品风险快照（ExhibitRisk） ============
+
+export type ExhibitRiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+export type ExhibitRiskSource = 'manual' | 'review' | 'plan' | 'report';
+
+export interface ExhibitRiskSnapshot {
+  id: string;
+  cardId: string;
+  snapshotDate: string;
+  riskLevel: ExhibitRiskLevel;
+  riskReasons: string[];
+  recommendedAction: string;
+  source: ExhibitRiskSource;
+  resolved: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const EXHIBIT_RISK_LEVEL_LABELS: Record<ExhibitRiskLevel, string> = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+  critical: '严重风险'
+};
+
+export const EXHIBIT_RISK_LEVEL_COLORS: Record<ExhibitRiskLevel, string> = {
+  low: '#27AE60',
+  medium: '#F39C12',
+  high: '#E67E22',
+  critical: '#E74C3C'
+};
+
+// 数值越大风险越高，用于展示排序：严重优先
+export const EXHIBIT_RISK_LEVEL_WEIGHT: Record<ExhibitRiskLevel, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  critical: 3
+};
+
+export const EXHIBIT_RISK_SOURCE_LABELS: Record<ExhibitRiskSource, string> = {
+  manual: '人工标注',
+  review: '工艺复核',
+  plan: '演示计划',
+  report: '训练报告'
+};
+
+// 久未试作阈值（天），用于风险因子判定
+export const EXHIBIT_RISK_STALE_DAYS = 14;

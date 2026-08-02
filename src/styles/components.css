@@ -529,6 +529,263 @@
   border: 1px solid rgba(39, 174, 96, 0.4);
 }
 
+/* ============ 展品风险快照（ExhibitRisk）展示 ============ */
+
+/* 卡片网格 / 路线视图共用的风险徽标，与稳定、星标、批量选择徽标并排兼容 */
+.risk-badge,
+.route-risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.route-risk-badge {
+  font-size: 10px;
+}
+
+.risk-badge-low {
+  background: rgba(39, 174, 96, 0.18);
+  color: var(--risk-low);
+  border: 1px solid rgba(39, 174, 96, 0.4);
+}
+.risk-badge-medium {
+  background: rgba(243, 156, 18, 0.18);
+  color: var(--risk-medium);
+  border: 1px solid rgba(243, 156, 18, 0.4);
+}
+.risk-badge-high {
+  background: rgba(230, 126, 34, 0.2);
+  color: var(--risk-high);
+  border: 1px solid rgba(230, 126, 34, 0.45);
+}
+.risk-badge-critical {
+  background: rgba(231, 76, 60, 0.22);
+  color: var(--risk-critical);
+  border: 1px solid rgba(231, 76, 60, 0.5);
+}
+
+/* critical 持续脉冲，突出“不可隐藏”的最高优先级 */
+.risk-badge-critical-pulse {
+  animation: riskCriticalPulse 1.6s ease-in-out infinite;
+}
+@keyframes riskCriticalPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.3); }
+}
+
+/* 最多两条风险原因 */
+.card-risk-reasons,
+.route-risk-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.4;
+  border-left: 3px solid transparent;
+}
+.route-risk-reasons {
+  margin-top: 6px;
+}
+.card-risk-reasons .risk-reason,
+.route-risk-reasons .risk-reason {
+  color: var(--text-secondary);
+}
+
+.risk-tone-low {
+  background: rgba(39, 174, 96, 0.08);
+  border-left-color: var(--risk-low);
+}
+.risk-tone-medium {
+  background: rgba(243, 156, 18, 0.08);
+  border-left-color: var(--risk-medium);
+}
+.risk-tone-high {
+  background: rgba(230, 126, 34, 0.1);
+  border-left-color: var(--risk-high);
+}
+.risk-tone-critical {
+  background: rgba(231, 76, 60, 0.1);
+  border-left-color: var(--risk-critical);
+}
+
+/* 路线视图整步的风险色条，仅在未被选择/高亮时生效，避免覆盖既有状态 */
+.route-step-risk-critical .route-card {
+  box-shadow: inset 3px 0 0 var(--risk-critical);
+}
+.route-step-risk-high .route-card {
+  box-shadow: inset 3px 0 0 var(--risk-high);
+}
+
+/* 工具栏风险等级筛选提示 */
+.filter-risk-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--risk-critical);
+  opacity: 0.85;
+}
+
+/* 选择态优先级高于风险色条，保持批量选择的视觉一致 */
+.card-item.card-selected .card-risk-reasons {
+  border-left-color: var(--copper);
+}
+
+/* 复核弹窗内的风险横幅：展示由复核沉淀 / 消解的风险快照 */
+.review-risk-banner {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.review-risk-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.review-risk-source {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.review-risk-reasons {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+}
+.review-risk-action {
+  margin-top: 6px;
+  color: var(--copper-light);
+  font-weight: 600;
+}
+.review-risk-banner.risk-resolved {
+  background: rgba(39, 174, 96, 0.1);
+  border-left-color: var(--success);
+  color: var(--success);
+}
+
+/* 工艺复核单·展品风险处置区域 */
+.risk-analysis-section {
+  margin-bottom: 20px;
+}
+.risk-count-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+.risk-count-card {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
+  text-align: center;
+}
+.risk-count-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.risk-count-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.risk-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.risk-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.risk-filter-group label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.risk-filter {
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.risk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.risk-item {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid transparent;
+  background: rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.risk-item:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+/* critical 优先：加重底色与描边，配合置顶排序更醒目 */
+.risk-item.risk-item-critical {
+  background: rgba(231, 76, 60, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(231, 76, 60, 0.35);
+}
+.risk-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.risk-item-source {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.risk-item-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.risk-item-reasons {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.risk-item-action {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--copper-light);
+}
+.risk-item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+.risk-resolved-tag {
+  font-size: 12px;
+  color: var(--success);
+  white-space: nowrap;
+}
+
 .review-modal {
   max-width: 740px;
 }

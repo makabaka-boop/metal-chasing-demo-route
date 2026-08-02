@@ -1,4 +1,5 @@
-import type { Card } from '../types';
+import type { Card, ExhibitRiskSnapshot } from '../types';
+import { sortCardsByExhibitRisk } from './exhibitRisk';
 
 export function generatePracticeRoute(cards: Card[]): Card[] {
   const clone = [...cards];
@@ -8,6 +9,17 @@ export function generatePracticeRoute(cards: Card[]): Card[] {
     return a.patternNumber.localeCompare(b.patternNumber);
   });
   return clone;
+}
+
+// PRD 中段规则：演示路线按“critical 优先、high 次之、原工艺难度递增”排序。
+// 先按原难度规则生成基础顺序（作为同风险等级下的次级排序），
+// 再依据代表性风险快照做稳定重排，风险判断完全复用传入的 riskMap。
+export function generateRiskAwareRoute(
+  cards: Card[],
+  riskMap: Map<string, ExhibitRiskSnapshot>
+): Card[] {
+  const base = generatePracticeRoute(cards);
+  return sortCardsByExhibitRisk(base, riskMap);
 }
 
 export function estimateTotalDuration(route: Card[]): number {
