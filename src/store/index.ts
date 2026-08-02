@@ -14,7 +14,8 @@ import type {
   OwnerStat,
   FrequentMistake,
   UnstableUnpracticedCard,
-  DailyPlanCompletion
+  DailyPlanCompletion,
+  ExhibitRiskSnapshot
 } from '../types';
 import { STABILITY_THRESHOLD } from '../types';
 import {
@@ -24,8 +25,16 @@ import {
   saveRecords,
   loadDailyPlans,
   saveDailyPlans,
+  loadExhibitRiskSnapshots,
+  saveExhibitRiskSnapshots,
   generateId
 } from '../utils/storage';
+import {
+  sortExhibitRiskSnapshots,
+  evaluateReviewRisk,
+  findUnresolvedReviewSnapshot,
+  getLatestSnapshotPerCard
+} from '../utils/exhibitRisk';
 import { formatDuration } from '../utils/router';
 
 type Listener = () => void;
@@ -47,12 +56,14 @@ class Store {
   private cards: Card[] = [];
   private records: PracticeRecord[] = [];
   private dailyPlans: DailyPlan[] = [];
+  private exhibitRiskSnapshots: ExhibitRiskSnapshot[] = [];
   private listeners: Set<Listener> = new Set();
 
   constructor() {
     this.cards = loadCards();
     this.records = loadRecords();
     this.dailyPlans = loadDailyPlans();
+    this.exhibitRiskSnapshots = loadExhibitRiskSnapshots();
   }
 
   subscribe(listener: Listener): () => void {
@@ -64,6 +75,7 @@ class Store {
     saveCards(this.cards);
     saveRecords(this.records);
     saveDailyPlans(this.dailyPlans);
+    saveExhibitRiskSnapshots(this.exhibitRiskSnapshots);
     for (const l of this.listeners) l();
   }
 
@@ -101,6 +113,7 @@ class Store {
   deleteCard(id: string): void {
     this.cards = this.cards.filter((c) => c.id !== id);
     this.records = this.records.filter((r) => r.cardId !== id);
+    this.exhibitRiskSnapshots = this.exhibitRiskSnapshots.filter((s) => s.cardId !== id);
     this.notify();
   }
 
@@ -184,8 +197,67 @@ class Store {
       }
     }
 
+    this.syncRiskFromRecord(record, now);
+
     this.notify();
     return record;
+  }
+
+  private syncRiskFromRecord(record: PracticeRecord, nowIso?: string): void {
+    const card = this.cards.find((c) => c.id === record.cardId);
+    if (!card) return;
+
+    const now = nowIso || new Date().toISOString();
+    const today = getTodayStr();
+    const stats = this.getCardReviewStats(record.cardId);
+
+    if (record.result === 'failed' || record.result === 'partial') {
+      const evaluation = evaluateReviewRisk(card, stats, record);
+      const existing = findUnresolvedReviewSnapshot(
+        this.exhibitRiskSnapshots,
+        record.cardId
+      );
+
+      if (existing) {
+        const idx = this.exhibitRiskSnapshots.indexOf(existing);
+        this.exhibitRiskSnapshots[idx] = {
+          ...existing,
+          snapshotDate: today,
+          riskLevel: evaluation.riskLevel,
+          riskReasons: evaluation.riskReasons,
+          recommendedAction: evaluation.recommendedAction,
+          source: 'review',
+          resolved: false,
+          updatedAt: now
+        };
+      } else {
+        this.exhibitRiskSnapshots.push({
+          id: generateId(),
+          cardId: record.cardId,
+          snapshotDate: today,
+          riskLevel: evaluation.riskLevel,
+          riskReasons: evaluation.riskReasons,
+          recommendedAction: evaluation.recommendedAction,
+          source: 'review',
+          resolved: false,
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+    }
+
+    if (stats.isStable) {
+      for (let i = 0; i < this.exhibitRiskSnapshots.length; i++) {
+        const s = this.exhibitRiskSnapshots[i];
+        if (
+          s.cardId === record.cardId &&
+          !s.resolved &&
+          (s.source === 'review' || s.source === 'report')
+        ) {
+          this.exhibitRiskSnapshots[i] = { ...s, resolved: true, updatedAt: now };
+        }
+      }
+    }
   }
 
   deleteRecord(recordId: string): void {
@@ -221,6 +293,69 @@ class Store {
       completedCount: completedRecords.length,
       totalDurationMin: totalDuration
     };
+  }
+
+  getExhibitRiskSnapshots(cardId?: string): ExhibitRiskSnapshot[] {
+    const pool = cardId
+      ? this.exhibitRiskSnapshots.filter((s) => s.cardId === cardId)
+      : this.exhibitRiskSnapshots;
+    return sortExhibitRiskSnapshots(pool);
+  }
+
+  upsertExhibitRiskSnapshot(
+    data: Omit<ExhibitRiskSnapshot, 'createdAt' | 'updatedAt'> & { id?: string }
+  ): ExhibitRiskSnapshot {
+    const now = new Date().toISOString();
+    const idx = data.id
+      ? this.exhibitRiskSnapshots.findIndex((s) => s.id === data.id)
+      : -1;
+
+    if (idx !== -1) {
+      const existing = this.exhibitRiskSnapshots[idx];
+      const updated: ExhibitRiskSnapshot = {
+        ...existing,
+        ...data,
+        id: existing.id,
+        createdAt: existing.createdAt,
+        updatedAt: now
+      };
+      this.exhibitRiskSnapshots[idx] = updated;
+      this.notify();
+      return updated;
+    }
+
+    const snapshot: ExhibitRiskSnapshot = {
+      ...data,
+      id: data.id || generateId(),
+      resolved: data.resolved ?? false,
+      riskReasons: data.riskReasons || [],
+      recommendedAction: data.recommendedAction || '',
+      createdAt: now,
+      updatedAt: now
+    };
+    this.exhibitRiskSnapshots.push(snapshot);
+    this.notify();
+    return snapshot;
+  }
+
+  resolveExhibitRiskSnapshot(id: string): void {
+    const idx = this.exhibitRiskSnapshots.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    const now = new Date().toISOString();
+    this.exhibitRiskSnapshots[idx] = {
+      ...this.exhibitRiskSnapshots[idx],
+      resolved: true,
+      updatedAt: now
+    };
+    this.notify();
+  }
+
+  deleteExhibitRiskSnapshot(id: string): void {
+    const before = this.exhibitRiskSnapshots.length;
+    this.exhibitRiskSnapshots = this.exhibitRiskSnapshots.filter((s) => s.id !== id);
+    if (this.exhibitRiskSnapshots.length !== before) {
+      this.notify();
+    }
   }
 
   getTodayPlan(): DailyPlan | null {
@@ -609,8 +744,12 @@ class Store {
       ? Math.round((completedRecords.length / records.length) * 100)
       : 0;
 
+    const latestByCard = getLatestSnapshotPerCard(this.exhibitRiskSnapshots);
+
     let stableCardCount = 0;
     let needFollowUpCardCount = 0;
+    let unresolvedCriticalRiskCount = 0;
+    let unresolvedHighRiskCount = 0;
     for (const card of cards) {
       const stats = this.getCardReviewStats(card.id);
       if (stats.isStable) {
@@ -619,6 +758,11 @@ class Store {
       if (card.status === 'need_help' || (stats.practiceCount > 0 && !stats.isStable && stats.completedCount < stats.practiceCount * 0.5)) {
         needFollowUpCardCount++;
       }
+      const snapshot = latestByCard.get(card.id);
+      if (snapshot && !snapshot.resolved) {
+        if (snapshot.riskLevel === 'critical') unresolvedCriticalRiskCount++;
+        else if (snapshot.riskLevel === 'high') unresolvedHighRiskCount++;
+      }
     }
 
     return {
@@ -626,7 +770,9 @@ class Store {
       totalDurationMin,
       completionRate,
       stableCardCount,
-      needFollowUpCardCount
+      needFollowUpCardCount,
+      unresolvedCriticalRiskCount,
+      unresolvedHighRiskCount
     };
   }
 

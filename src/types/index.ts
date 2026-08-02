@@ -104,6 +104,7 @@ export interface FilterCriteria {
   lastPracticeDaysAgo?: number;
   minLastPracticeDate?: string;
   maxLastPracticeDate?: string;
+  riskLevel?: ExhibitRiskLevel;
 }
 
 export type AlertType =
@@ -172,6 +173,8 @@ export interface ReportSummaryStats {
   completionRate: number;
   stableCardCount: number;
   needFollowUpCardCount: number;
+  unresolvedCriticalRiskCount: number;
+  unresolvedHighRiskCount: number;
 }
 
 export interface DifficultyStat {
@@ -225,4 +228,70 @@ export interface TrainingReport {
   frequentMistakes: FrequentMistake[];
   unstableUnpracticedCards: UnstableUnpracticedCard[];
   dailyPlanCompletions: DailyPlanCompletion[];
+}
+
+export type ExhibitRiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+export type ExhibitRiskSource = 'manual' | 'review' | 'plan' | 'report';
+
+export const EXHIBIT_RISK_LEVEL_LABELS: Record<ExhibitRiskLevel, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+  critical: '紧急'
+};
+
+export const EXHIBIT_RISK_LEVEL_COLORS: Record<ExhibitRiskLevel, string> = {
+  low: '#27AE60',
+  medium: '#F39C12',
+  high: '#E67E22',
+  critical: '#E74C3C'
+};
+
+export const EXHIBIT_RISK_LEVEL_ORDER: Record<ExhibitRiskLevel, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3
+};
+
+export const EXHIBIT_RISK_SOURCE_LABELS: Record<ExhibitRiskSource, string> = {
+  manual: '手动登记',
+  review: '工艺复核',
+  plan: '演示计划',
+  report: '训练报告'
+};
+
+export type ExhibitRiskReason =
+  | 'unstable'
+  | 'long_inactive'
+  | 'need_help'
+  | 'starred_no_notes'
+  | 'plan_postponed'
+  | 'plan_incomplete'
+  | 'review_problems'
+  | 'duration_deviation';
+
+export const EXHIBIT_RISK_REASON_LABELS: Record<ExhibitRiskReason, string> = {
+  unstable: '工艺未稳定',
+  long_inactive: '久未试作',
+  need_help: '需讲解',
+  starred_no_notes: '重点但无讲解提示',
+  plan_postponed: '今日计划暂缓',
+  plan_incomplete: '今日计划未完成',
+  review_problems: '复核发现问题',
+  duration_deviation: '实际工时偏差'
+};
+
+export interface ExhibitRiskSnapshot {
+  id: string;
+  cardId: string;
+  snapshotDate: string;
+  riskLevel: ExhibitRiskLevel;
+  riskReasons: ExhibitRiskReason[];
+  recommendedAction: string;
+  source: ExhibitRiskSource;
+  resolved: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

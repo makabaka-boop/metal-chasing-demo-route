@@ -1,5 +1,14 @@
-import type { Card, FilterCriteria, CardReviewStats } from '../types';
+import type { Card, FilterCriteria, CardReviewStats, ExhibitRiskSnapshot } from '../types';
 import { store } from '../store';
+import { getLatestSnapshotPerCard } from './exhibitRisk';
+
+export function buildSnapshotMap(): Map<string, ExhibitRiskSnapshot> {
+  return getLatestSnapshotPerCard(store.getExhibitRiskSnapshots());
+}
+
+export function isCriticalPinned(snapshot: ExhibitRiskSnapshot | undefined): boolean {
+  return !!snapshot && !snapshot.resolved && snapshot.riskLevel === 'critical';
+}
 
 export function filterCards(
   cards: Card[],
@@ -9,9 +18,12 @@ export function filterCards(
   for (const card of cards) {
     statsMap.set(card.id, store.getCardReviewStats(card.id));
   }
+  const snapshotMap = buildSnapshotMap();
 
   let result = cards.filter((card) => {
     const stats = statsMap.get(card.id)!;
+    const snapshot = snapshotMap.get(card.id);
+    const criticalPinned = isCriticalPinned(snapshot);
 
     if (criteria.metalSpec && criteria.metalSpec !== card.metalSpec) {
       return false;
@@ -70,6 +82,10 @@ export function filterCards(
       cutoff.setDate(cutoff.getDate() - criteria.lastPracticeDaysAgo);
       const cutoffStr = cutoff.toISOString().slice(0, 10);
       if (!stats.lastPracticeDate || stats.lastPracticeDate < cutoffStr) return false;
+    }
+    if (criteria.riskLevel) {
+      if (criticalPinned) return true;
+      if (!snapshot || snapshot.riskLevel !== criteria.riskLevel) return false;
     }
     return true;
   });

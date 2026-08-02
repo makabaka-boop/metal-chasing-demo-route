@@ -1,8 +1,9 @@
-import type { Card, PracticeRecord, DailyPlan } from '../types';
+import type { Card, PracticeRecord, DailyPlan, ExhibitRiskSnapshot } from '../types';
 
 const STORAGE_KEY = 'chasing-practice-cards';
 const RECORDS_KEY = 'chasing-practice-records';
 const DAILY_PLAN_KEY = 'chasing-daily-plan';
+const EXHIBIT_RISK_KEY = 'chasing-exhibit-risk-snapshots';
 
 export function loadCards(): Card[] {
   try {
@@ -50,6 +51,82 @@ export function loadDailyPlans(): DailyPlan[] {
 
 export function saveDailyPlans(plans: DailyPlan[]): void {
   localStorage.setItem(DAILY_PLAN_KEY, JSON.stringify(plans));
+}
+
+export function loadExhibitRiskSnapshots(): ExhibitRiskSnapshot[] {
+  try {
+    const raw = localStorage.getItem(EXHIBIT_RISK_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeExhibitRiskSnapshot).filter(
+      (s): s is ExhibitRiskSnapshot => s !== null
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function saveExhibitRiskSnapshots(snapshots: ExhibitRiskSnapshot[]): void {
+  localStorage.setItem(EXHIBIT_RISK_KEY, JSON.stringify(snapshots));
+}
+
+function normalizeExhibitRiskSnapshot(raw: unknown): ExhibitRiskSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.id !== 'string' || typeof obj.cardId !== 'string') return null;
+
+  const riskLevel = normalizeRiskLevel(obj.riskLevel);
+  const source = normalizeRiskSource(obj.source);
+  const riskReasons = normalizeRiskReasons(obj.riskReasons);
+
+  return {
+    id: obj.id,
+    cardId: obj.cardId,
+    snapshotDate: typeof obj.snapshotDate === 'string' ? obj.snapshotDate : '',
+    riskLevel,
+    riskReasons,
+    recommendedAction: typeof obj.recommendedAction === 'string' ? obj.recommendedAction : '',
+    source,
+    resolved: typeof obj.resolved === 'boolean' ? obj.resolved : false,
+    createdAt: typeof obj.createdAt === 'string' ? obj.createdAt : new Date().toISOString(),
+    updatedAt: typeof obj.updatedAt === 'string' ? obj.updatedAt : new Date().toISOString()
+  };
+}
+
+function normalizeRiskLevel(value: unknown): ExhibitRiskSnapshot['riskLevel'] {
+  if (value === 'low' || value === 'medium' || value === 'high' || value === 'critical') {
+    return value;
+  }
+  return 'low';
+}
+
+function normalizeRiskSource(value: unknown): ExhibitRiskSnapshot['source'] {
+  if (value === 'manual' || value === 'review' || value === 'plan' || value === 'report') {
+    return value;
+  }
+  return 'manual';
+}
+
+function normalizeRiskReasons(value: unknown): ExhibitRiskSnapshot['riskReasons'] {
+  if (!Array.isArray(value)) return [];
+  const valid: ExhibitRiskSnapshot['riskReasons'] = [];
+  const allowed = new Set([
+    'unstable',
+    'long_inactive',
+    'need_help',
+    'starred_no_notes',
+    'plan_postponed',
+    'plan_incomplete',
+    'review_problems',
+    'duration_deviation'
+  ]);
+  for (const item of value) {
+    if (typeof item === 'string' && allowed.has(item)) {
+      valid.push(item as ExhibitRiskSnapshot['riskReasons'][number]);
+    }
+  }
+  return valid;
 }
 
 function seedData(): Card[] {

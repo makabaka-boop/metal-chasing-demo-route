@@ -1,5 +1,6 @@
 import type { Card } from '../types';
 import { CardItem } from './CardItem';
+import { buildSnapshotMap } from '../utils/filters';
 
 export class CardGrid {
   private el: HTMLElement;
@@ -63,6 +64,7 @@ export class CardGrid {
   update(cards: Card[]): void {
     const existing = new Set(this.items.keys());
     const current = new Set(cards.map((c) => c.id));
+    const snapshotMap = buildSnapshotMap();
 
     for (const id of existing) {
       if (!current.has(id)) {
@@ -74,8 +76,9 @@ export class CardGrid {
 
     for (const card of cards) {
       const existingItem = this.items.get(card.id);
+      const snapshot = snapshotMap.get(card.id);
       if (existingItem) {
-        existingItem.update(card);
+        existingItem.update(card, snapshot);
       } else {
         const item = new CardItem(card, {
           onEdit: this.handlers.onEdit,
@@ -89,7 +92,7 @@ export class CardGrid {
             else this.selected.delete(id);
             this.handlers.onSelectionChange(this.selected);
           }
-        });
+        }, snapshot);
         if (this.selected.has(card.id)) item.setSelected(true);
         this.items.set(card.id, item);
         this.el.appendChild(item.getElement());

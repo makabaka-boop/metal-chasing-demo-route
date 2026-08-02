@@ -1,11 +1,15 @@
 import { store } from '../store';
-import type { PracticeRecord, ReviewResult } from '../types';
+import type { PracticeRecord, ReviewResult, ExhibitRiskSnapshot } from '../types';
 import {
   REVIEW_RESULT_LABELS,
   REVIEW_RESULT_COLORS,
-  STABILITY_THRESHOLD
+  STABILITY_THRESHOLD,
+  EXHIBIT_RISK_LEVEL_LABELS,
+  EXHIBIT_RISK_LEVEL_COLORS,
+  EXHIBIT_RISK_REASON_LABELS
 } from '../types';
 import { formatDuration } from '../utils/router';
+import { getLatestSnapshotPerCard } from '../utils/exhibitRisk';
 
 export class ReviewModal {
   private overlay: HTMLElement;
@@ -43,6 +47,11 @@ export class ReviewModal {
     const records = store.getRecords(this.cardId);
     const stats = store.getCardReviewStats(this.cardId);
     const today = new Date().toISOString().slice(0, 10);
+    const snapshot = getLatestSnapshotPerCard(
+      store.getExhibitRiskSnapshots(this.cardId)
+    ).get(this.cardId);
+
+    const riskBanner = this.renderRiskBanner(snapshot);
 
     this.el.innerHTML = `
       <div class="modal-header">
@@ -69,6 +78,7 @@ export class ReviewModal {
           </div>
         </div>
         ${stats.lastPracticeDate ? `<div class="review-last-date">最近试作：${stats.lastPracticeDate}</div>` : ''}
+        ${riskBanner}
 
         <div class="review-form-section">
           <h3 class="review-section-title">➕ 记录本次试作</h3>
@@ -92,6 +102,7 @@ export class ReviewModal {
                     )
                     .join('')}
                 </select>
+                <span class="review-risk-hint">选择"部分确认"或"需返工"将自动生成展品风险快照（来源：工艺复核）</span>
               </div>
             </div>
             <div class="form-group">
@@ -150,6 +161,29 @@ export class ReviewModal {
     `
       )
       .join('');
+  }
+
+  private renderRiskBanner(
+    snapshot: ExhibitRiskSnapshot | undefined
+  ): string {
+    if (!snapshot) {
+      return `<div class="review-risk-banner review-risk-none">🚩 暂无展品风险快照，保存"部分确认/需返工"记录后将自动生成</div>`;
+    }
+    if (snapshot.resolved) {
+      return `<div class="review-risk-banner review-risk-resolved">✓ 风险已于 ${snapshot.updatedAt.slice(0, 10)} 解除（来源：${snapshot.source}）</div>`;
+    }
+    const color = EXHIBIT_RISK_LEVEL_COLORS[snapshot.riskLevel];
+    const reasons = snapshot.riskReasons
+      .slice(0, 3)
+      .map((r) => EXHIBIT_RISK_REASON_LABELS[r])
+      .join('、');
+    const criticalClass = snapshot.riskLevel === 'critical' ? ' review-risk-critical' : '';
+    return `
+      <div class="review-risk-banner review-risk-${snapshot.riskLevel}${criticalClass}">
+        <span class="review-risk-level" style="background:${color}">🚩 ${EXHIBIT_RISK_LEVEL_LABELS[snapshot.riskLevel]}</span>
+        <span class="review-risk-meta">${snapshot.snapshotDate} · ${reasons || '待补充原因'}</span>
+      </div>
+    `;
   }
 
   private bindEvents(): void {

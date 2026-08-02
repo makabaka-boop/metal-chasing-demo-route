@@ -1,8 +1,14 @@
 import type { Card } from '../types';
+import { store } from '../store';
+import { getLatestSnapshotPerCard, getRouteRiskPriority } from './exhibitRisk';
 
 export function generatePracticeRoute(cards: Card[]): Card[] {
+  const snapshotMap = getLatestSnapshotPerCard(store.getExhibitRiskSnapshots());
   const clone = [...cards];
   clone.sort((a, b) => {
+    const pa = getRouteRiskPriority(snapshotMap.get(a.id));
+    const pb = getRouteRiskPriority(snapshotMap.get(b.id));
+    if (pa !== pb) return pa - pb;
     if (a.difficulty !== b.difficulty) return a.difficulty - b.difficulty;
     if (a.durationMin !== b.durationMin) return a.durationMin - b.durationMin;
     return a.patternNumber.localeCompare(b.patternNumber);
