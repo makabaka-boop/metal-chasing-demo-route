@@ -104,6 +104,8 @@ export interface FilterCriteria {
   lastPracticeDaysAgo?: number;
   minLastPracticeDate?: string;
   maxLastPracticeDate?: string;
+  riskLevel?: ExhibitRiskLevel;
+  includeResolvedRisk?: boolean;
 }
 
 export type AlertType =
@@ -172,6 +174,9 @@ export interface ReportSummaryStats {
   completionRate: number;
   stableCardCount: number;
   needFollowUpCardCount: number;
+  unresolvedRiskCount: number;
+  criticalRiskCount: number;
+  reviewRiskCount: number;
 }
 
 export interface DifficultyStat {
@@ -225,4 +230,92 @@ export interface TrainingReport {
   frequentMistakes: FrequentMistake[];
   unstableUnpracticedCards: UnstableUnpracticedCard[];
   dailyPlanCompletions: DailyPlanCompletion[];
+}
+
+export type ExhibitRiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+export type ExhibitRiskSource = 'manual' | 'review' | 'plan' | 'report';
+
+export type ExhibitRiskReason =
+  | 'unstable'
+  | 'long_unpracticed'
+  | 'need_help'
+  | 'starred_no_notes'
+  | 'plan_delayed_or_incomplete'
+  | 'review_issue'
+  | 'duration_deviation';
+
+export const EXHIBIT_RISK_LEVEL_LABELS: Record<ExhibitRiskLevel, string> = {
+  low: '低风险',
+  medium: '中风险',
+  high: '高风险',
+  critical: '紧急'
+};
+
+export const EXHIBIT_RISK_LEVEL_COLORS: Record<ExhibitRiskLevel, string> = {
+  low: '#27AE60',
+  medium: '#F39C12',
+  high: '#E67E22',
+  critical: '#E74C3C'
+};
+
+export const EXHIBIT_RISK_LEVEL_ORDER: Record<ExhibitRiskLevel, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3
+};
+
+export const EXHIBIT_RISK_REASON_LABELS: Record<ExhibitRiskReason, string> = {
+  unstable: '未稳定',
+  long_unpracticed: '久未试作',
+  need_help: '需讲解',
+  starred_no_notes: '重点但无讲解提示',
+  plan_delayed_or_incomplete: '今日计划暂缓或未完成',
+  review_issue: '复核发现问题',
+  duration_deviation: '实际工时偏差'
+};
+
+export const EXHIBIT_RISK_SOURCE_LABELS: Record<ExhibitRiskSource, string> = {
+  manual: '手动登记',
+  review: '工艺复核',
+  plan: '演示路线',
+  report: '训练报告'
+};
+
+export const EXHIBIT_LONG_UNPRACTICED_DAYS = 14;
+
+export interface ExhibitRiskSnapshot {
+  id: string;
+  cardId: string;
+  snapshotDate: string;
+  riskLevel: ExhibitRiskLevel;
+  riskReasons: ExhibitRiskReason[];
+  recommendedAction: string;
+  source: ExhibitRiskSource;
+  resolved: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ExhibitRiskSnapshotInput = Omit<
+  ExhibitRiskSnapshot,
+  'id' | 'createdAt' | 'updatedAt'
+> & {
+  id?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export interface ExhibitRiskEvaluation {
+  riskLevel: ExhibitRiskLevel;
+  riskReasons: ExhibitRiskReason[];
+  recommendedAction: string;
+}
+
+export interface ExhibitRiskEvaluationContext {
+  card: Card;
+  stats: CardReviewStats;
+  todayPlanItemStatus?: DailyPlanItem['status'] | null;
+  todayPlanStatus?: DailyPlan['status'] | null;
 }
