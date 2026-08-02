@@ -1,7 +1,8 @@
 import type { Card } from '../types';
-import { STATUS_LABELS, STATUS_COLORS, DIFFICULTY_LABELS, STABILITY_THRESHOLD } from '../types';
+import { STATUS_LABELS, STATUS_COLORS, DIFFICULTY_LABELS, STABILITY_THRESHOLD, EXHIBIT_RISK_LEVEL_LABELS } from '../types';
 import { formatDuration } from '../utils/router';
 import { store } from '../store';
+import { pickRepresentativeExhibitRisk } from '../utils/exhibitRisk';
 
 export class CardItem {
   private el: HTMLElement;
@@ -90,6 +91,18 @@ export class CardItem {
       planBadge = `<span class="plan-status-badge plan-status-${planStatus}">📋 ${statusLabels[planStatus]}</span>`;
     }
 
+    // 复用 store 快照，取代表性风险，不在组件内重新拼装风险判断
+    const risk = pickRepresentativeExhibitRisk(store.getExhibitRiskSnapshots(c.id));
+    const showRisk = risk && !risk.resolved;
+    const riskBadge = showRisk
+      ? `<span class="risk-badge risk-badge-${risk!.riskLevel}${risk!.riskLevel === 'critical' ? ' risk-badge-critical-pulse' : ''}" title="${risk!.recommendedAction}">⚠ ${EXHIBIT_RISK_LEVEL_LABELS[risk!.riskLevel]}</span>`
+      : '';
+    const riskReasons = showRisk && risk!.riskReasons.length > 0
+      ? `<div class="card-risk-reasons risk-tone-${risk!.riskLevel}">
+          ${risk!.riskReasons.slice(0, 2).map((r) => `<span class="risk-reason">• ${r}</span>`).join('')}
+        </div>`
+      : '';
+
     this.el.innerHTML = `
       <div class="card-header" style="border-left:4px solid ${STATUS_COLORS[c.status]}">
         <label class="card-select-wrap">
@@ -100,6 +113,7 @@ export class CardItem {
           <span class="card-spec">${c.metalSpec}</span>
         </div>
         ${stats.isStable ? '<span class="stable-badge" title="工艺表现已稳定">✅ 稳定</span>' : ''}
+        ${riskBadge}
         ${planBadge}
         <button class="btn-icon card-star" title="${c.starred ? '取消收藏' : '重点收藏'}">
           ${c.starred ? '⭐' : '☆'}
@@ -116,6 +130,7 @@ export class CardItem {
           <span class="card-owner">👤 ${c.owner || '未分配'}</span>
           ${stats.practiceCount > 0 ? `<span class="card-practice-count">📝 试作${stats.practiceCount}次</span>` : ''}
         </div>
+        ${riskReasons}
         <div class="card-preview">
           ${stepsPreview ? `<p>${stepsPreview}${c.steps.length > 40 ? '...' : ''}</p>` : '<p class="muted">暂无步骤描述</p>'}
         </div>

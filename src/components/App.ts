@@ -11,7 +11,8 @@ import { TrainingReportPanel } from './TrainingReportPanel';
 import { validateAll } from '../utils/validators';
 import { filterCards } from '../utils/filters';
 import { exportToCSV } from '../utils/csv';
-import { generatePracticeRoute } from '../utils/router';
+import { generateRiskAwareRoute } from '../utils/router';
+import { buildRepresentativeRiskMap } from '../utils/exhibitRisk';
 
 export class App {
   private root: HTMLElement;
@@ -112,7 +113,8 @@ export class App {
       this.cardGrid.update(filtered);
     } else {
       const filtered = filterCards(all, this.criteria);
-      const route = generatePracticeRoute(filtered);
+      const riskMap = buildRepresentativeRiskMap(store.getExhibitRiskSnapshots());
+      const route = generateRiskAwareRoute(filtered, riskMap);
       this.routeView.update(route);
     }
 
@@ -134,7 +136,7 @@ export class App {
     const all = store.getCards();
     const filtered = filterCards(all, this.criteria);
     const data = this.isRouteMode
-      ? generatePracticeRoute(filtered)
+      ? generateRiskAwareRoute(filtered, buildRepresentativeRiskMap(store.getExhibitRiskSnapshots()))
       : filtered;
     if (data.length === 0) {
       alert('暂无数据可导出');

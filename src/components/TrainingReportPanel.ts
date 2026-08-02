@@ -2,14 +2,23 @@ import { store } from '../store';
 import type {
   TrainingReport,
   ReportDateRangeConfig,
-  ReportDateRange
+  ReportDateRange,
+  ExhibitRiskLevel,
+  ExhibitRiskSource
 } from '../types';
 import {
   STATUS_LABELS,
   STATUS_COLORS,
-  DIFFICULTY_LABELS
+  DIFFICULTY_LABELS,
+  EXHIBIT_RISK_LEVEL_LABELS,
+  EXHIBIT_RISK_SOURCE_LABELS
 } from '../types';
 import { formatDuration } from '../utils/router';
+import {
+  countExhibitRiskByLevel,
+  filterExhibitRiskSnapshots
+} from '../utils/exhibitRisk';
+import type { ExhibitRiskFilter } from '../utils/exhibitRisk';
 
 export class TrainingReportPanel {
   private el: HTMLElement;
@@ -18,6 +27,7 @@ export class TrainingReportPanel {
   private isOpen = false;
   private dateRange: ReportDateRangeConfig = { type: '7days' };
   private report: TrainingReport | null = null;
+  private riskFilter: ExhibitRiskFilter = { resolved: false };
 
   constructor(
     onCardClick: (id: string) => void,
@@ -78,6 +88,139 @@ export class TrainingReportPanel {
   private addCardToPlan(cardId: string): void {
     store.addCardsToTodayPlan([cardId]);
     this.refresh();
+  }
+
+  // 风险分析区域：复用 store.getExhibitRiskSnapshots() 的原始快照，
+  // 顶部统计各等级数量，中部按 riskLevel / source / resolved 过滤并展示列表。
+  private renderRiskAnalysis(): string {
+    const snapshots = store.getExhibitRiskSnapshots();
+    const counts = countExhibitRiskByLevel(snapshots);
+    const filtered = filterExhibitRiskSnapshots(snapshots, this.riskFilter);
+
+    const levels: ExhibitRiskLevel[] = ['low', 'medium', 'high', 'critical'];
+    const sources: ExhibitRiskSource[] = ['manual', 'review', 'plan', 'report'];
+    const f = this.riskFilter;
+
+    const levelCards = levels
+      .map(
+        (lv) => `
+        <div class="risk-count-card risk-tone-${lv}">
+          <div class="risk-count-value">${counts[lv]}</div>
+          <div class="risk-count-label">${EXHIBIT_RISK_LEVEL_LABELS[lv]}</div>
+        </div>`
+      )
+      .join('');
+
+    const levelOptions = levels
+      .map(
+        (lv) =>
+          `<option value="${lv}" ${f.riskLevel === lv ? 'selected' : ''}>${EXHIBIT_RISK_LEVEL_LABELS[lv]}</option>`
+      )
+      .join('');
+    const sourceOptions = sources
+      .map(
+        (src) =>
+          `<option value="${src}" ${f.source === src ? 'selected' : ''}>${EXHIBIT_RISK_SOURCE_LABELS[src]}</option>`
+      )
+      .join('');
+
+    const listHtml =
+      filtered.length > 0
+        ? filtered.map((snap) => this.renderRiskItem(snap)).join('')
+        : '<div class="empty-text">当前筛选条件下暂无风险快照</div>';
+
+    return `
+      <div class="risk-analysis-section">
+        <div class="stats-card">
+          <h3 class="stats-title">🚨 展品风险处置</h3>
+          <p class="card-subtitle">按等级集中统计与处置未解决风险，critical 始终优先展示</p>
+
+          <div class="risk-count-grid">
+            ${levelCards}
+          </div>
+
+          <div class="risk-filter-bar">
+            <div class="risk-filter-group">
+              <label>风险等级</label>
+              <select class="risk-filter" data-risk-filter="riskLevel">
+                <option value="" ${!f.riskLevel ? 'selected' : ''}>全部</option>
+                ${levelOptions}
+              </select>
+            </div>
+            <div class="risk-filter-group">
+              <label>来源</label>
+              <select class="risk-filter" data-risk-filter="source">
+                <option value="" ${!f.source ? 'selected' : ''}>全部</option>
+                ${sourceOptions}
+              </select>
+            </div>
+            <div class="risk-filter-group">
+              <label>处置状态</label>
+              <select class="risk-filter" data-risk-filter="resolved">
+                <option value="false" ${f.resolved === false ? 'selected' : ''}>未解决</option>
+                <option value="true" ${f.resolved === true ? 'selected' : ''}>已解决</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="risk-list">
+            ${listHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  private renderRiskItem(snap: {
+    id: string;
+    cardId: string;
+    snapshotDate: string;
+    riskLevel: ExhibitRiskLevel;
+    riskReasons: string[];
+    recommendedAction: string;
+    source: ExhibitRiskSource;
+    resolved: boolean;
+  }): string {
+    const card = store.getCard(snap.cardId);
+    const stats = store.getCardReviewStats(snap.cardId);
+    const inPlan = store.isCardInTodayPlan(snap.cardId);
+    const isCritical = snap.riskLevel === 'critical' && !snap.resolved;
+
+    const patternNumber = card?.patternNumber ?? '（样片已删除）';
+    const difficultyTag = card
+      ? `<span class="diff-tag diff-${card.difficulty}">${DIFFICULTY_LABELS[card.difficulty]}</span>`
+      : '';
+    const lastPractice = stats.lastPracticeDate
+      ? `最近试作 ${stats.lastPracticeDate}`
+      : '尚无试作记录';
+
+    return `
+      <div class="risk-item risk-tone-${snap.riskLevel}${isCritical ? ' risk-item-critical' : ''}" data-card-id="${snap.cardId}">
+        <div class="risk-item-main">
+          <div class="risk-item-head">
+            <span class="risk-badge risk-badge-${snap.riskLevel}${isCritical ? ' risk-badge-critical-pulse' : ''}">⚠ ${EXHIBIT_RISK_LEVEL_LABELS[snap.riskLevel]}</span>
+            <span class="card-number">${patternNumber}</span>
+            ${difficultyTag}
+            <span class="risk-item-source">${EXHIBIT_RISK_SOURCE_LABELS[snap.source]} · ${snap.snapshotDate}</span>
+          </div>
+          <div class="risk-item-sub">${lastPractice}</div>
+          <ul class="risk-item-reasons">
+            ${snap.riskReasons.map((r) => `<li>${r}</li>`).join('')}
+          </ul>
+          ${snap.recommendedAction ? `<div class="risk-item-action">👉 ${snap.recommendedAction}</div>` : ''}
+        </div>
+        <div class="risk-item-actions">
+          <button class="btn btn-tiny risk-add-plan" data-card-id="${snap.cardId}" ${inPlan || !card ? 'disabled' : ''}>
+            ${inPlan ? '已编排' : '+ 演示序列'}
+          </button>
+          ${
+            snap.resolved
+              ? '<span class="risk-resolved-tag">✅ 已解决</span>'
+              : `<button class="btn btn-tiny btn-primary risk-resolve" data-risk-id="${snap.id}">标记解决</button>`
+          }
+        </div>
+      </div>
+    `;
   }
 
   private render(): void {
@@ -154,8 +297,17 @@ export class TrainingReportPanel {
                 <div class="summary-label">讲解风险点</div>
               </div>
             </div>
+            <div class="summary-card summary-warning">
+              <div class="summary-icon">🚩</div>
+              <div class="summary-info">
+                <div class="summary-value">${s.activeRiskCardCount}</div>
+                <div class="summary-label">未消解风险快照</div>
+              </div>
+            </div>
           </div>
         </div>
+
+        ${this.renderRiskAnalysis()}
 
         <div class="stats-section">
           <div class="stats-card">
@@ -354,5 +506,65 @@ export class TrainingReportPanel {
         }
       });
     });
+
+    // 风险分析区域：过滤器、加入演示序列、标记解决、点击样片打开编辑
+    this.el.querySelectorAll<HTMLSelectElement>('.risk-filter').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const key = sel.dataset.riskFilter as 'riskLevel' | 'source' | 'resolved';
+        this.updateRiskFilter(key, sel.value);
+      });
+    });
+
+    this.el.querySelectorAll<HTMLButtonElement>('.risk-add-plan').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cardId = btn.dataset.cardId;
+        if (cardId && !btn.disabled) {
+          this.addCardToPlan(cardId);
+        }
+      });
+    });
+
+    this.el.querySelectorAll<HTMLButtonElement>('.risk-resolve').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const riskId = btn.dataset.riskId;
+        if (riskId) {
+          store.resolveExhibitRiskSnapshot(riskId);
+          this.refresh();
+        }
+      });
+    });
+
+    this.el.querySelectorAll<HTMLElement>('.risk-item').forEach((item) => {
+      item.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('button')) return;
+        const cardId = item.dataset.cardId;
+        if (cardId && store.getCard(cardId)) {
+          this.onCardClick(cardId);
+          this.close();
+        }
+      });
+    });
+  }
+
+  private updateRiskFilter(
+    key: 'riskLevel' | 'source' | 'resolved',
+    value: string
+  ): void {
+    if (key === 'resolved') {
+      this.riskFilter = { ...this.riskFilter, resolved: value === 'true' };
+    } else if (key === 'riskLevel') {
+      this.riskFilter = {
+        ...this.riskFilter,
+        riskLevel: value ? (value as ExhibitRiskLevel) : undefined
+      };
+    } else {
+      this.riskFilter = {
+        ...this.riskFilter,
+        source: value ? (value as ExhibitRiskSource) : undefined
+      };
+    }
+    this.refresh();
   }
 }

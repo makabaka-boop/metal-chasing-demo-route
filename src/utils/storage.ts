@@ -1,8 +1,19 @@
-import type { Card, PracticeRecord, DailyPlan } from '../types';
+import type {
+  Card,
+  PracticeRecord,
+  DailyPlan,
+  ExhibitRiskSnapshot,
+  ExhibitRiskLevel,
+  ExhibitRiskSource
+} from '../types';
 
 const STORAGE_KEY = 'chasing-practice-cards';
 const RECORDS_KEY = 'chasing-practice-records';
 const DAILY_PLAN_KEY = 'chasing-daily-plan';
+const EXHIBIT_RISK_KEY = 'chasing-exhibit-risk-snapshots';
+
+const RISK_LEVELS: ExhibitRiskLevel[] = ['low', 'medium', 'high', 'critical'];
+const RISK_SOURCES: ExhibitRiskSource[] = ['manual', 'review', 'plan', 'report'];
 
 export function loadCards(): Card[] {
   try {
@@ -50,6 +61,64 @@ export function loadDailyPlans(): DailyPlan[] {
 
 export function saveDailyPlans(plans: DailyPlan[]): void {
   localStorage.setItem(DAILY_PLAN_KEY, JSON.stringify(plans));
+}
+
+// 将任意旧数据补齐为合法的 ExhibitRiskSnapshot，保证旧本地数据可正常加载
+function normalizeExhibitRiskSnapshot(raw: unknown): ExhibitRiskSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+
+  const cardId = typeof r.cardId === 'string' ? r.cardId : '';
+  if (!cardId) return null;
+
+  const now = new Date().toISOString();
+  const createdAt = typeof r.createdAt === 'string' ? r.createdAt : now;
+  const updatedAt = typeof r.updatedAt === 'string' ? r.updatedAt : createdAt;
+
+  const riskLevel: ExhibitRiskLevel =
+    typeof r.riskLevel === 'string' && RISK_LEVELS.includes(r.riskLevel as ExhibitRiskLevel)
+      ? (r.riskLevel as ExhibitRiskLevel)
+      : 'low';
+
+  const source: ExhibitRiskSource =
+    typeof r.source === 'string' && RISK_SOURCES.includes(r.source as ExhibitRiskSource)
+      ? (r.source as ExhibitRiskSource)
+      : 'manual';
+
+  const riskReasons = Array.isArray(r.riskReasons)
+    ? r.riskReasons.filter((x): x is string => typeof x === 'string')
+    : [];
+
+  return {
+    id: typeof r.id === 'string' && r.id ? r.id : generateId(),
+    cardId,
+    snapshotDate: typeof r.snapshotDate === 'string' ? r.snapshotDate : createdAt.slice(0, 10),
+    riskLevel,
+    riskReasons,
+    recommendedAction: typeof r.recommendedAction === 'string' ? r.recommendedAction : '',
+    source,
+    resolved: typeof r.resolved === 'boolean' ? r.resolved : false,
+    createdAt,
+    updatedAt
+  };
+}
+
+export function loadExhibitRiskSnapshots(): ExhibitRiskSnapshot[] {
+  try {
+    const raw = localStorage.getItem(EXHIBIT_RISK_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => normalizeExhibitRiskSnapshot(item))
+      .filter((s): s is ExhibitRiskSnapshot => s !== null);
+  } catch {
+    return [];
+  }
+}
+
+export function saveExhibitRiskSnapshots(snapshots: ExhibitRiskSnapshot[]): void {
+  localStorage.setItem(EXHIBIT_RISK_KEY, JSON.stringify(snapshots));
 }
 
 function seedData(): Card[] {

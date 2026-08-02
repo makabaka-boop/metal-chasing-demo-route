@@ -3,9 +3,12 @@ import type { PracticeRecord, ReviewResult } from '../types';
 import {
   REVIEW_RESULT_LABELS,
   REVIEW_RESULT_COLORS,
-  STABILITY_THRESHOLD
+  STABILITY_THRESHOLD,
+  EXHIBIT_RISK_LEVEL_LABELS,
+  EXHIBIT_RISK_SOURCE_LABELS
 } from '../types';
 import { formatDuration } from '../utils/router';
+import { pickRepresentativeExhibitRisk } from '../utils/exhibitRisk';
 
 export class ReviewModal {
   private overlay: HTMLElement;
@@ -44,6 +47,25 @@ export class ReviewModal {
     const stats = store.getCardReviewStats(this.cardId);
     const today = new Date().toISOString().slice(0, 10);
 
+    // 复用 store 快照，取该卡片代表性风险；未解决时提示复核联动结果
+    const risk = pickRepresentativeExhibitRisk(store.getExhibitRiskSnapshots(this.cardId));
+    const activeRisk = risk && !risk.resolved ? risk : null;
+    const riskSection = activeRisk
+      ? `
+        <div class="review-risk-banner risk-tone-${activeRisk.riskLevel}">
+          <div class="review-risk-head">
+            <span class="risk-badge risk-badge-${activeRisk.riskLevel}${activeRisk.riskLevel === 'critical' ? ' risk-badge-critical-pulse' : ''}">⚠ ${EXHIBIT_RISK_LEVEL_LABELS[activeRisk.riskLevel]}</span>
+            <span class="review-risk-source">来源：${EXHIBIT_RISK_SOURCE_LABELS[activeRisk.source]} · ${activeRisk.snapshotDate}</span>
+          </div>
+          <ul class="review-risk-reasons">
+            ${activeRisk.riskReasons.map((r) => `<li>${r}</li>`).join('')}
+          </ul>
+          ${activeRisk.recommendedAction ? `<div class="review-risk-action">👉 ${activeRisk.recommendedAction}</div>` : ''}
+        </div>`
+      : (risk
+        ? `<div class="review-risk-banner risk-resolved">✅ 该样片风险已消解（累计确认达到稳定阈值）</div>`
+        : '');
+
     this.el.innerHTML = `
       <div class="modal-header">
         <h2>📝 试作记录 · ${card.patternNumber}</h2>
@@ -69,6 +91,7 @@ export class ReviewModal {
           </div>
         </div>
         ${stats.lastPracticeDate ? `<div class="review-last-date">最近试作：${stats.lastPracticeDate}</div>` : ''}
+        ${riskSection}
 
         <div class="review-form-section">
           <h3 class="review-section-title">➕ 记录本次试作</h3>
